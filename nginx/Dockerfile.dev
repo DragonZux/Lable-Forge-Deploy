@@ -1,0 +1,16 @@
+FROM nginx:1.25-alpine
+
+# Install brotli
+RUN apk add --no-cache \
+    brotli \
+    brotli-libs
+
+# Enable gzip and brotli in nginx config
+RUN mkdir -p /etc/nginx/conf.d
+
+COPY nginx.conf /etc/nginx/nginx.conf
+COPY conf.d /etc/nginx/conf.d/
+
+EXPOSE 80 443
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lời mời tham gia workspace</title>
+</head>
+<body style="margin:0; padding:0; background:#f4f0ff; color:#25163a; font-family:'Segoe UI', Arial, sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f0ff; margin:0; padding:32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px; background:#fffdfb; border:1px solid #e7def8; border-radius:18px; overflow:hidden;">
+          <tr>
+            <td style="padding:30px 34px 24px; background:#241332;">
+              <div style="font-size:13px; letter-spacing:0.14em; text-transform:uppercase; color:#cdb7ff; font-weight:700;">LabelForge</div>
+              <h1 style="margin:12px 0 0; color:#ffffff; font-size:28px; line-height:1.2; font-weight:800;">Bạn được mời vào workspace</h1>
+              <p style="margin:12px 0 0; color:#ded2ef; font-size:15px; line-height:1.6;">Cùng quản lý dữ liệu, nhãn và quy trình gán nhãn trong một không gian làm việc chung.</p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:34px;">
+              <p style="margin:0 0 18px; color:#3a294e; font-size:16px; line-height:1.7;">Xin chào {{ invitee_name or 'bạn' }},</p>
+              <p style="margin:0 0 24px; color:#3a294e; font-size:16px; line-height:1.7;">
+                <strong style="color:#241332;">{{ invited_by_name }}</strong> đã mời bạn tham gia workspace
+                <strong style="color:#6d28d9;">{{ workspace_name }}</strong> với vai trò
+                <strong style="color:#241332;">{{ role }}</strong>.
+              </p>
+
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 24px; background:#f8f5ff; border:1px solid #e9ddff; border-radius:14px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <div style="font-size:12px; letter-spacing:0.12em; text-transform:uppercase; color:#7c3aed; font-weight:800;">Workspace</div>
+                    <div style="margin-top:8px; color:#241332; font-size:22px; line-height:1.25; font-weight:800;">{{ workspace_name }}</div>
+                    <div style="margin-top:8px; color:#6b587c; font-size:14px; line-height:1.5;">Vai trò được cấp: <strong style="color:#3a294e;">{{ role }}</strong></div>
+                  </td>
+                </tr>
+              </table>
+
+              {% if message %}
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 26px; background:#fff7ed; border:1px solid #fed7aa; border-radius:14px;">
+                <tr>
+                  <td style="padding:18px 20px;">
+                    <div style="font-size:12px; letter-spacing:0.12em; text-transform:uppercase; color:#9a3412; font-weight:800;">Lời nhắn</div>
+                    <p style="margin:8px 0 0; color:#4b2e1b; font-size:15px; line-height:1.7;">“{{ message }}”</p>
+                  </td>
+                </tr>
+              </table>
+              {% endif %}
+
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px 0 18px;">
+                <tr>
+                  <td style="border-radius:12px; background:#6d28d9;">
+                    <a href="{{ accept_url }}" style="display:inline-block; padding:14px 22px; color:#ffffff; text-decoration:none; font-size:15px; font-weight:800;">Chấp nhận lời mời</a>
+                  </td>
+                  <td width="12"></td>
+                  <td style="border-radius:12px; background:#f0e9fb; border:1px solid #ded2ef;">
+                    <a href="{{ decline_url }}" style="display:inline-block; padding:13px 20px; color:#4c3765; text-decoration:none; font-size:15px; font-weight:700;">Từ chối</a>
+                  </td>
+                </tr>
+              </table>
+
+              <p style="margin:18px 0 0; color:#6b587c; font-size:13px; line-height:1.6;">Nếu nút không hoạt động, hãy mở liên kết này trong trình duyệt:</p>
+              <p style="margin:6px 0 0; word-break:break-all; color:#6d28d9; font-size:13px; line-height:1.6;"><a href="{{ accept_url }}" style="color:#6d28d9;">{{ accept_url }}</a></p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:22px 34px; background:#fbf8ff; border-top:1px solid #eee5fb;">
+              <p style="margin:0; color:#7c6b8f; font-size:12px; line-height:1.6;">Liên kết này hết hạn sau 7 ngày. Nếu bạn không mong đợi lời mời này, bạn có thể bỏ qua email.</p>
+              <p style="margin:10px 0 0; color:#9a8aaa; font-size:12px;">© 2026 LabelForge</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
