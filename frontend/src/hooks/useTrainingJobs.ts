@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { apiDelete, apiGet, apiPost } from '@/lib/api'
+import { getAccessToken } from '@/lib/auth'
 import { TrainingJob } from '@/types'
 
 export function useTrainingJobs(projectId: string) {
@@ -137,8 +138,14 @@ export function useTrainingJobStream(jobId: string) {
   useEffect(() => {
     if (!jobId) return
 
+    const token = getAccessToken()
+    const streamUrl = token
+      ? `/api/training/${jobId}/stream?access_token=${encodeURIComponent(token)}`
+      : `/api/training/${jobId}/stream`
+
     const eventSource = new EventSource(
-      `/api/training/${jobId}/stream`
+      streamUrl,
+      { withCredentials: true }
     )
 
     setIsConnected(true)

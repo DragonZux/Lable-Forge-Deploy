@@ -5,7 +5,7 @@ import secrets
 
 import bcrypt
 from bson import ObjectId
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
@@ -164,12 +164,16 @@ async def validate_user_session(user_id: str, session_id: Optional[str]) -> None
 async def get_current_user(
     request: Request,
     token: Optional[str] = Depends(oauth2_scheme),
+    access_token: Optional[str] = Query(None),
 ) -> UserInDB:
     """Get the current authenticated user from JWT token in header or cookie."""
     if not token:
         token = request.cookies.get("access_token")
         if token:
             logger.info("Auth: Found token in cookie")
+        elif access_token:
+            token = access_token
+            logger.info("Auth: Found token in query parameter")
         else:
             logger.info("Auth: No token in header or cookie")
     else:

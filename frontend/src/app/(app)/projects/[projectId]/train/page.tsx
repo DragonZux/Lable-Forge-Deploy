@@ -24,6 +24,7 @@ import { motion } from 'framer-motion'
 import { useProject } from '@/hooks/useProjects'
 import { usePermissions } from '@/hooks/usePermissions'
 import { emitAppToast } from '@/lib/toast-events'
+import { apiGet } from '@/lib/api'
 
 type TrainingConfig = {
   architecture: 'yolov8n' | 'yolov8s' | 'yolov8m'
@@ -105,16 +106,17 @@ export default function TrainPage() {
       if (selectedBackend === 'colab' && job) {
         setColabLoading(true)
         try {
-          const response = await fetch(`/api/training/${job.id}/colab-link`)
-          const data = await response.json()
-          if (!response.ok) {
-            const errMsg = data?.detail || data?.message || `Failed to get Colab link (${response.status})`
-            try { emitAppToast({ message: errMsg, type: 'error' }) } catch {}
-          } else if (data.colab_url && data.parameters) {
+          const data = await apiGet<{ colab_url?: string; parameters?: Record<string, any> }>(
+            `/training/${job.id}/colab-link`
+          )
+          if (data.colab_url && data.parameters) {
             setColabParams(data.parameters)
             setColabUrl(data.colab_url)
             setShowColabModal(true)
           }
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : 'Failed to get Colab link'
+          try { emitAppToast({ message: errMsg, type: 'error' }) } catch {}
         } finally {
           setColabLoading(false)
         }
