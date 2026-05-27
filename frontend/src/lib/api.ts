@@ -8,7 +8,7 @@ import { emitAppToast } from "./toast-events";
 
 // Get base URL - use absolute URL on server, relative on client
 const isServer = typeof window === "undefined";
-const API_BASE_URL = isServer
+export const API_BASE_URL = isServer
   ? (process.env.INTERNAL_API_URL || "http://127.0.0.1:8000/api")
   : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api");
 

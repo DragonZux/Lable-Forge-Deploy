@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { apiDelete, apiGet, apiPost } from '@/lib/api'
+import { API_BASE_URL, apiDelete, apiGet, apiPost } from '@/lib/api'
 import { getAccessToken } from '@/lib/auth'
 import { TrainingJob } from '@/types'
 
@@ -138,10 +138,11 @@ export function useTrainingJobStream(jobId: string) {
   useEffect(() => {
     if (!jobId) return
 
+    const baseUrl = API_BASE_URL.replace(/\/$/, '')
     const token = getAccessToken()
     const streamUrl = token
-      ? `/api/training/${jobId}/stream?access_token=${encodeURIComponent(token)}`
-      : `/api/training/${jobId}/stream`
+      ? `${baseUrl}/training/${jobId}/stream?access_token=${encodeURIComponent(token)}`
+      : `${baseUrl}/training/${jobId}/stream`
 
     const eventSource = new EventSource(
       streamUrl,
