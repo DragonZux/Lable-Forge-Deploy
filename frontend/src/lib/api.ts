@@ -3,7 +3,7 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
 } from "axios";
-import { clearAuth } from "./auth";
+import { clearAuth, getAccessToken } from "./auth";
 import { emitAppToast } from "./toast-events";
 
 // Get base URL - use absolute URL on server, relative on client
@@ -90,6 +90,10 @@ const api: AxiosInstance = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
+    const token = getAccessToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error) => {
