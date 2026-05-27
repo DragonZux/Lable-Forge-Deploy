@@ -97,8 +97,9 @@ Nginx (reverse proxy)
 ## Chạy dự án local
 
 1. Cài Docker Desktop và bật Docker.
-2. Mở terminal ở thư mục gốc.
-3. Chạy:
+2. Copy `.env.example` thành `.env` và điền secret local của bạn.
+3. Mở terminal ở thư mục gốc.
+4. Chạy:
 
 ```bash
 docker compose up --build
@@ -110,6 +111,18 @@ docker compose up --build
 - Frontend trực tiếp: `http://localhost:3333`
 - API trực tiếp: `http://localhost:8888/api`
 - MinIO Console: `http://localhost:9001`
+
+## Chạy production bằng Docker Compose
+
+1. Copy `.env.production.example` thành file env riêng trên server hoặc đưa các biến này vào secret manager.
+2. Đổi toàn bộ secret mặc định: `JWT_SECRET`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`, OAuth, SMTP.
+3. Chạy:
+
+```bash
+docker compose -f docker-compose.prod.yml --env-file .env.production up --build -d
+```
+
+Production compose không bind mount source code, dùng Dockerfile production và không publish trực tiếp MongoDB/Redis/MinIO ra host.
 
 ---
 
@@ -145,6 +158,7 @@ File `.env` cần chứa các biến sau:
 - Đây là một bản demo học tập / prototype, không phải hệ thống production hoàn chỉnh.
 - MinIO được dùng ở môi trường local, có thể thay bằng AWS S3 cho production.
 - Annotation canvas hiện tại mô phỏng giao diện, dữ liệu annotation vẫn được giữ lại.
+- Không commit file `.env`, model weights `.pt`, hoặc app password. Nếu secret từng lộ, hãy revoke/rotate trên nhà cung cấp trước khi deploy lại.
 
 ---
 

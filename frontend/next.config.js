@@ -23,6 +23,7 @@ const allowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || '')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = withBundleAnalyzer({
+  output: 'standalone',
   turbopack: {
     root: path.join(__dirname, '.'),
   },

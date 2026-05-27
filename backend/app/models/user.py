@@ -4,7 +4,7 @@ from datetime import datetime
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
     full_name: str
 
 class UserInDB(BaseModel):
@@ -29,7 +29,7 @@ class Token(BaseModel):
 
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., min_length=8, max_length=128)
 
 class GoogleLogin(BaseModel):
     credential: str
@@ -39,5 +39,5 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
 
 class PasswordUpdate(BaseModel):
-    current_password: str
-    new_password: str
+    current_password: str = Field(..., min_length=8, max_length=128)
+    new_password: str = Field(..., min_length=8, max_length=128)

@@ -58,10 +58,9 @@ class EmailService:
         config_error = _email_config_error()
         if config_error:
             logger.warning(
-                "Skipped workspace invitation email to %s: %s. token=%s",
+                "Skipped workspace invitation email to %s: %s",
                 invitee_email,
                 config_error,
-                invitation_token,
             )
             return
 
@@ -109,10 +108,9 @@ class EmailService:
         config_error = _email_config_error()
         if config_error:
             logger.warning(
-                "Skipped project invitation email to %s: %s. token=%s",
+                "Skipped project invitation email to %s: %s",
                 invitee_email,
                 config_error,
-                invitation_token,
             )
             return
 

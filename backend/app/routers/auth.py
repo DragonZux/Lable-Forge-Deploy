@@ -1,7 +1,7 @@
 import secrets
 from bson import ObjectId
 from typing import Optional, Tuple
-from fastapi import APIRouter, HTTPException, status, Depends, Response, Request, Form
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Response, Request, Form
 from fastapi.responses import RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from google.auth.transport import requests as google_requests
@@ -288,13 +288,77 @@ async def update_password(
 
 @router.delete("/me")
 async def delete_account(
+    request: Request,
+    background_tasks: BackgroundTasks,
     current_user: UserInDB = Depends(get_current_user),
     db = Depends(get_database)
 ):
     """
-    Delete current user's account.
+    Delete current user's account and clean up user-scoped references.
     """
-    await db.users.delete_one({"_id": ObjectId(current_user.id)})
+    user_id = str(current_user.id)
+    user_email = str(current_user.email)
+
+    owned_workspaces = await db.workspaces.find({"owner_id": user_id}).to_list(None)
+    owned_workspace_ids = [str(workspace["_id"]) for workspace in owned_workspaces]
+    owned_projects = await db.projects.find(
+        {"workspace_id": {"$in": owned_workspace_ids}}
+    ).to_list(None)
+    owned_project_ids = [str(project["_id"]) for project in owned_projects]
+
+    if owned_project_ids:
+        images = await db.images.find({"project_id": {"$in": owned_project_ids}}).to_list(None)
+        for image in images:
+            filename = image.get("filename")
+            if filename:
+                background_tasks.add_task(storage_client.delete_file, filename)
+
+        await db.projects.delete_many({"_id": {"$in": [ObjectId(pid) for pid in owned_project_ids]}})
+        await db.images.delete_many({"project_id": {"$in": owned_project_ids}})
+        await db.annotations.delete_many({"project_id": {"$in": owned_project_ids}})
+        await db.annotation_audit_logs.delete_many({"project_id": {"$in": owned_project_ids}})
+        await db.class_labels.delete_many({"project_id": {"$in": owned_project_ids}})
+        await db.dataset_versions.delete_many({"project_id": {"$in": owned_project_ids}})
+        await db.training_jobs.delete_many({"project_id": {"$in": owned_project_ids}})
+        await db.deployed_models.delete_many({"project_id": {"$in": owned_project_ids}})
+        await db.project_invitations.delete_many({"project_id": {"$in": owned_project_ids}})
+
+    if owned_workspace_ids:
+        await db.workspaces.delete_many({"_id": {"$in": [ObjectId(wid) for wid in owned_workspace_ids]}})
+        await db.workspace_invitations.delete_many({"workspace_id": {"$in": owned_workspace_ids}})
+
+    await db.workspaces.update_many(
+        {"members.user_id": user_id},
+        {"$pull": {"members": {"user_id": user_id}}},
+    )
+    await db.projects.update_many(
+        {"members.user_id": user_id},
+        {"$pull": {"members": {"user_id": user_id}}},
+    )
+    await db.images.update_many(
+        {"assigned_to_user_id": user_id},
+        {
+            "$set": {
+                "assigned_to_user_id": None,
+                "assigned_by_user_id": None,
+                "assigned_at": None,
+                "due_at": None,
+                "completed_at": None,
+                "assignment_status": "unassigned",
+            }
+        },
+    )
+    await db.notifications.delete_many({"user_id": user_id})
+    await db.workspace_invitations.delete_many({"invitee_email": user_email})
+    await db.project_invitations.delete_many({"invitee_email": user_email})
+    await db.users.delete_one({"_id": ObjectId(user_id)})
+    await cache_delete(f"user:{user_id}")
+
+    token = request.cookies.get("access_token")
+    if token:
+        payload = decode_token(token)
+        if payload:
+            await invalidate_user_session(user_id, payload.get("sid"))
     return {"message": "Account deleted successfully"}
 
 
@@ -323,7 +387,11 @@ async def logout(request: Request, response: Response):
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(request: Request, current_user: UserInDB = Depends(get_current_user)):
+async def refresh_token(
+    request: Request,
+    response: Response,
+    current_user: UserInDB = Depends(get_current_user),
+):
     token = request.cookies.get("access_token")
     session_id = None
     if token:
@@ -331,4 +399,5 @@ async def refresh_token(request: Request, current_user: UserInDB = Depends(get_c
         if payload:
             session_id = payload.get("sid")
     access_token = create_access_token(data={"sub": current_user.id, "sid": session_id})
+    _set_auth_cookie(response, access_token)
     return Token(access_token=access_token, token_type="bearer")
