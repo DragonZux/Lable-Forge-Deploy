@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
+import { ChunkLoadRecovery } from "@/components/layout/ChunkLoadRecovery";
 import { ErrorBoundary } from "@/components/layout/ErrorBoundary";
 import { ToastProvider } from "@/components/ui/Toast";
 import { ThemeProvider } from "@/contexts/ThemeContext";
@@ -91,6 +92,7 @@ export default function RootLayout({
         />
       </head>
       <body className="font-sans antialiased" suppressHydrationWarning>
+        <ChunkLoadRecovery />
         <ErrorBoundary>
           <ThemeProvider>
             <ToastProvider>

@@ -13,6 +13,41 @@ interface State {
   error: Error | null;
 }
 
+const CHUNK_RELOAD_STORAGE_KEY = "label-forge:chunk-reload-attempted";
+const CHUNK_RELOAD_COOLDOWN_MS = 60_000;
+const CHUNK_ERROR_PATTERNS = [
+  /Loading chunk \d+ failed/i,
+  /Failed to load chunk/i,
+  /ChunkLoadError/i,
+  /missing module/i,
+];
+
+function isChunkLoadError(error: unknown): boolean {
+  if (!error) return false;
+
+  const message =
+    error instanceof Error
+      ? `${error.name} ${error.message}`
+      : typeof error === "string"
+        ? error
+        : JSON.stringify(error);
+
+  return CHUNK_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+}
+
+function reloadOnceForFreshBuild(): boolean {
+  if (typeof window === "undefined") return false;
+
+  const lastReload = Number(sessionStorage.getItem(CHUNK_RELOAD_STORAGE_KEY));
+  if (lastReload && Date.now() - lastReload < CHUNK_RELOAD_COOLDOWN_MS) {
+    return false;
+  }
+
+  sessionStorage.setItem(CHUNK_RELOAD_STORAGE_KEY, Date.now().toString());
+  window.location.reload();
+  return true;
+}
+
 export class ErrorBoundary extends React.Component<Props, State> {
   constructor(props: Props) {
     super(props);
@@ -25,6 +60,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("ErrorBoundary caught an error:", error, errorInfo);
+
+    if (isChunkLoadError(error) && reloadOnceForFreshBuild()) {
+      return;
+    }
   }
 
   render() {

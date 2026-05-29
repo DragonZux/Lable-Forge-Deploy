@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import api from '@/lib/api'
 import { emitAppToast } from '@/lib/toast-events'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -177,48 +178,23 @@ export default function UploadPage() {
     setFiles(prev => prev.map(f => f.status === 'pending' ? { ...f, status: 'uploading', progress: 10 } : f))
 
     try {
-      const response = await fetch(
-        `/api/images/upload?project_id=${projectId}`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          body: formData,
-        }
+      await api.post(`/images/upload?project_id=${projectId}`, formData)
+
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.status === 'uploading'
+            ? { ...f, status: 'done', progress: 100 }
+            : f
+        )
       )
-
-      if (response.ok) {
-        setFiles((prev) =>
-          prev.map((f) =>
-            f.status === 'uploading'
-              ? { ...f, status: 'done', progress: 100 }
-              : f
-          )
-        )
-        // Reset after 3 seconds
-        resetTimeoutRef.current = setTimeout(() => {
-          clearFiles()
-          setIsUploading(false)
-          resetTimeoutRef.current = null
-        }, 3000)
-      } else {
-        let errorText = 'Upload failed'
-        try {
-          const errorData = await response.json()
-          errorText = errorData?.detail || errorData?.message || errorText
-        } catch {}
-
-        setFiles((prev) =>
-          prev.map((f) => f.status === 'uploading' ? {
-            ...f,
-            status: 'error',
-            error: errorText,
-          } : f)
-        )
-        try { emitAppToast({ message: errorText, type: 'error' }) } catch {}
+      // Reset after 3 seconds
+      resetTimeoutRef.current = setTimeout(() => {
+        clearFiles()
         setIsUploading(false)
-      }
-    } catch {
-      const errMsg = 'Connection failed'
+        resetTimeoutRef.current = null
+      }, 3000)
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Connection failed'
       setFiles((prev) =>
         prev.map((f) => f.status === 'uploading' ? {
           ...f,
@@ -242,26 +218,14 @@ export default function UploadPage() {
     formData.append('file', annotationFile)
 
     try {
-      const response = await fetch(
-        `/api/annotations/import?project_id=${projectId}&format=${annotationFormat}&replace_existing=${replaceExisting}`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          body: formData,
-        }
+      const response = await api.post(
+        `/annotations/import?project_id=${projectId}&format=${annotationFormat}&replace_existing=${replaceExisting}`,
+        formData
       )
 
-      const data = await response.json()
-      if (!response.ok) {
-        const errMsg = data?.detail || data?.message || 'Import failed'
-        setAnnotationImportError(errMsg)
-        try { emitAppToast({ message: errMsg, type: 'error' }) } catch {}
-        return
-      }
-
-      setAnnotationImportResult(data)
-    } catch {
-      const errMsg = 'Connection failed'
+      setAnnotationImportResult(response.data)
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Connection failed'
       setAnnotationImportError(errMsg)
       try { emitAppToast({ message: errMsg, type: 'error' }) } catch {}
     } finally {
