@@ -59,7 +59,7 @@ export default function DeclineProjectInvitationPage() {
             <X size={40} className="text-red-500" />
           </div>
           <h1 className="font-display text-3xl text-foreground">Cannot decline project invitation</h1>
-          <p className="mt-3 max-w-md rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <p className="mt-3 max-w-md rounded-xl border border-red-200 dark:border-red-500/20 bg-red-50 dark:bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-400">
             {errorMsg}
           </p>
           <Link href="/dashboard" className="mt-8 font-semibold text-muted-foreground transition-colors hover:text-accent">

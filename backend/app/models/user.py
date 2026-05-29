@@ -4,7 +4,7 @@ from datetime import datetime
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str
     full_name: str
 
 class UserInDB(BaseModel):
@@ -15,6 +15,12 @@ class UserInDB(BaseModel):
     avatar_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     is_active: bool = True
+    kaggle_username: Optional[str] = None
+    kaggle_key: Optional[str] = None
+
+class KaggleCredentialsUpdate(BaseModel):
+    kaggle_username: str
+    kaggle_key: str
 
 class UserResponse(BaseModel):
     id: str
@@ -29,7 +35,7 @@ class Token(BaseModel):
 
 class UserLogin(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=128)
+    password: str
 
 class GoogleLogin(BaseModel):
     credential: str
@@ -39,5 +45,13 @@ class UserUpdate(BaseModel):
     avatar_url: Optional[str] = None
 
 class PasswordUpdate(BaseModel):
-    current_password: str = Field(..., min_length=8, max_length=128)
-    new_password: str = Field(..., min_length=8, max_length=128)
+    current_password: str
+    new_password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+

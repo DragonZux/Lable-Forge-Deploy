@@ -336,6 +336,7 @@ async def get_project_health(
 
     result = {
         "project_id": project_id,
+        "project_type": project.get("type", "object-detection"),
         "timestamp": datetime.utcnow().isoformat(),
         "summary": {
             "total_images": total_images,

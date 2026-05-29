@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { Suspense, useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, Button, Input, Tabs, Modal } from "@/components/ui";
 import { useToast } from "@/components/ui/Toast";
 import { apiPatch, apiDelete, api } from "@/lib/api";
 import { SectionLabel } from "@/components/ui/SectionLabel";
-import { User, Shield, AlertTriangle, Mail, Camera, Upload } from "lucide-react";
+import { User, Shield, AlertTriangle, Mail, Camera, Upload, Cloud, Eye, EyeOff } from "lucide-react";
 import { motion } from "framer-motion";
 
 interface ProfileForm {
@@ -21,15 +22,89 @@ interface PasswordForm {
 }
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsLoading />}>
+      <SettingsContent />
+    </Suspense>
+  );
+}
+
+function SettingsLoading() {
+  return (
+    <div className="p-8 flex items-center justify-center min-h-[50vh]">
+      <div className="w-10 h-10 border-4 border-accent/20 border-t-accent rounded-full animate-spin" />
+    </div>
+  );
+}
+
+function SettingsContent() {
   const { user, logout, refetchUser } = useAuth();
   const toast = useToast();
-  const [, setActiveTab] = useState("profile");
+  const searchParams = useSearchParams();
+  const tabParam = searchParams?.get("tab") || "profile";
+  const [activeTab, setActiveTab] = useState("profile");
+
+  useEffect(() => {
+    if (tabParam && ["profile", "security", "kaggle", "danger"].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
   const [isLoading, setIsLoading] = useState(false);
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteEmail, setDeleteEmail] = useState("");
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Kaggle credentials form states
+  const [kaggleUsername, setKaggleUsername] = useState("");
+  const [kaggleKey, setKaggleKey] = useState("");
+  const [isKaggleConfigured, setIsKaggleConfigured] = useState(false);
+  const [showKaggleKey, setShowKaggleKey] = useState(false);
+  const [isLoadingKaggle, setIsLoadingKaggle] = useState(false);
+
+  useEffect(() => {
+    const fetchKaggleCredentials = async () => {
+      try {
+        const res = await api.get("/settings/kaggle");
+        if (res.data) {
+          setKaggleUsername(res.data.kaggle_username || "");
+          setIsKaggleConfigured(res.data.is_configured || false);
+          if (res.data.kaggle_key) {
+            setKaggleKey(res.data.kaggle_key);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load Kaggle credentials status:", err);
+      }
+    };
+    fetchKaggleCredentials();
+  }, []);
+
+  const handleUpdateKaggle = async () => {
+    if (!kaggleUsername.trim()) {
+      toast.error("Kaggle Username is required");
+      return;
+    }
+    if (!kaggleKey.trim()) {
+      toast.error("Kaggle API Key (Token) is required");
+      return;
+    }
+
+    setIsLoadingKaggle(true);
+    try {
+      await api.put("/settings/kaggle", {
+        kaggle_username: kaggleUsername.trim(),
+        kaggle_key: kaggleKey.trim(),
+      });
+      setIsKaggleConfigured(true);
+      toast.success("Kaggle account credentials linked successfully");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || error?.detail || "Failed to update Kaggle credentials");
+    } finally {
+      setIsLoadingKaggle(false);
+    }
+  };
 
   // Profile form
   const [profileForm, setProfileForm] = useState<ProfileForm>({
@@ -162,11 +237,7 @@ export default function SettingsPage() {
   };
 
   if (!user) {
-    return (
-      <div className="p-8 flex items-center justify-center min-h-[50vh]">
-        <div className="w-10 h-10 border-4 border-accent/20 border-t-accent rounded-full animate-spin" />
-      </div>
-    );
+    return <SettingsLoading />;
   }
 
   const tabs = [
@@ -367,6 +438,97 @@ export default function SettingsPage() {
       ),
     },
     {
+      id: "kaggle",
+      label: (
+        <div className="flex items-center gap-2">
+          <Cloud className="w-4 h-4" />
+          <span>Kaggle GPU</span>
+        </div>
+      ),
+      content: (
+        <div className="space-y-6 pt-4">
+          <div className="rounded-2xl border border-accent/15 bg-accent/5 p-5 flex gap-4">
+            <Cloud className="w-6 h-6 text-accent shrink-0 mt-0.5" />
+            <div className="space-y-1.5 leading-relaxed">
+              <h4 className="text-sm font-bold text-foreground">Kaggle Headless GPU Training</h4>
+              <p className="text-xs text-muted-foreground">
+                Link your Kaggle account to launch automated YOLOv8 training runs directly on Kaggle's high-speed T4 GPU nodes. Once configured, Label Forge will push notebooks and manage executions in the background completely headlessly.
+              </p>
+              <div className="pt-2 text-xs font-semibold text-accent flex items-center gap-1.5">
+                <span>How to get API Token?</span>
+                <a 
+                  href="https://www.kaggle.com/" 
+                  target="_blank" 
+                  rel="noreferrer"
+                  className="underline hover:text-accent-secondary"
+                >
+                  Go to Kaggle
+                </a>
+                <span>&gt; Profile &gt; Settings &gt; Create New API Token to download kaggle.json file.</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest ml-1">
+                Kaggle Username
+              </label>
+              <Input
+                value={kaggleUsername}
+                onChange={(e) => setKaggleUsername(e.target.value)}
+                placeholder="e.g. johndoe"
+                className="h-12 rounded-xl"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center px-1">
+                <label className="text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                  Kaggle API Key (Token)
+                </label>
+                {isKaggleConfigured && (
+                  <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    Active Token Configured
+                  </span>
+                )}
+              </div>
+              <div className="relative">
+                <Input
+                  value={kaggleKey}
+                  onChange={(e) => setKaggleKey(e.target.value)}
+                  placeholder="Paste your Kaggle API key from kaggle.json"
+                  type={showKaggleKey ? "text" : "password"}
+                  className="h-12 rounded-xl pr-12 font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKaggleKey(!showKaggleKey)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showKaggleKey ? (
+                    <EyeOff className="w-5 h-5" />
+                  ) : (
+                    <Eye className="w-5 h-5" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-4">
+            <Button 
+              onClick={handleUpdateKaggle} 
+              isLoading={isLoadingKaggle}
+              className="h-12 px-8 rounded-xl shadow-accent"
+            >
+              Link Kaggle Account
+            </Button>
+          </div>
+        </div>
+      ),
+    },
+    {
       id: "danger",
       label: (
         <div className="flex items-center gap-2">
@@ -420,7 +582,7 @@ export default function SettingsPage() {
         animate={{ opacity: 1, y: 0 }}
       >
         <Card className="panel overflow-hidden p-6 sm:p-8">
-          <Tabs tabs={tabs} defaultTab="profile" onChange={setActiveTab} />
+          <Tabs tabs={tabs} defaultTab={activeTab} onChange={setActiveTab} />
         </Card>
       </motion.div>
 

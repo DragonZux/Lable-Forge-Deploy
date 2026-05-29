@@ -6,7 +6,6 @@ import { UserResponse } from "@/types";
 import { apiPost, apiGet } from "@/lib/api";
 import {
   getCurrentUser,
-  setAccessToken,
   setCurrentUser,
   clearAuth,
   isAuthenticated,
@@ -125,7 +124,6 @@ export function useAuth(): UseAuthReturn {
       }>("/auth/login", { email, password });
 
       setCurrentUser(response.user);
-      setAccessToken(response.access_token);
       setUser(response.user);
       globalUser = response.user;
       globalAuthChecked = true;
@@ -150,7 +148,6 @@ export function useAuth(): UseAuthReturn {
       }>("/auth/google", { credential });
 
       setCurrentUser(response.user);
-      setAccessToken(response.access_token);
       setUser(response.user);
       globalUser = response.user;
       globalAuthChecked = true;
@@ -176,7 +173,6 @@ export function useAuth(): UseAuthReturn {
       }>("/auth/register", { email, password, full_name: fullName });
 
       setCurrentUser(response.user);
-      setAccessToken(response.access_token);
       setUser(response.user);
       globalUser = response.user;
       globalAuthChecked = true;

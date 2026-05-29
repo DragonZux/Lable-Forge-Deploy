@@ -92,10 +92,15 @@ def _artifact_exists(artifact_url: Optional[str]) -> bool:
         raise
 
 
-def _ensure_hosted_artifact(training_job_id: str, artifact_url: Optional[str]) -> str:
+def _ensure_hosted_artifact(
+    training_job_id: str,
+    artifact_url: Optional[str],
+    workspace_id: str = "default_workspace",
+    project_id: str = "default_project",
+) -> str:
     if not artifact_url:
         raise HTTPException(status_code=400, detail="Model artifact is missing")
-    if artifact_url.startswith("minio://model-artifacts/"):
+    if artifact_url.startswith("minio://"):
         if not _artifact_exists(artifact_url):
             raise HTTPException(
                 status_code=400,
@@ -112,7 +117,7 @@ def _ensure_hosted_artifact(training_job_id: str, artifact_url: Optional[str]) -
                 detail=f"Failed to download external model artifact: {exc}",
             ) from exc
 
-        artifact_key = f"model-artifacts/{training_job_id}/best.pt"
+        artifact_key = f"workspaces/{workspace_id}/projects/{project_id}/model-artifacts/{training_job_id}/best.pt"
         storage_client.upload_file(
             file_bytes=response.content,
             filename=artifact_key,
@@ -178,7 +183,10 @@ async def _run_yolo_inference(
 
     start_time = time.time()
     yolo_model = _load_yolo_model(model)
-    job = await db.training_jobs.find_one({"_id": ObjectId(model["training_job_id"])})
+    job = None
+    training_job_id = model.get("training_job_id")
+    if training_job_id and training_job_id != "imported" and ObjectId.is_valid(training_job_id):
+        job = await db.training_jobs.find_one({"_id": ObjectId(training_job_id)})
     training_config = job.get("training_config", {}) if job else {}
     confidence = float(training_config.get("confidence_threshold", 0.25))
 
@@ -266,7 +274,13 @@ async def deploy_model(
             status_code=400,
             detail=f"Can only deploy completed jobs (current status: {job['status']})",
         )
-    artifact_url = _ensure_hosted_artifact(training_job_id, job.get("artifact_url"))
+    workspace_id = project.get("workspace_id", "default_workspace")
+    artifact_url = _ensure_hosted_artifact(
+        training_job_id,
+        job.get("artifact_url"),
+        workspace_id=workspace_id,
+        project_id=project_id,
+    )
     if artifact_url != job.get("artifact_url"):
         await db.training_jobs.update_one(
             {"_id": job_oid},
@@ -297,6 +311,75 @@ async def deploy_model(
     await db.deployed_models.insert_one(model_doc)
 
     # Invalidate cache
+    await redis.delete(f"deploy:project:{project_id}:keys:0")
+    await redis.delete(f"deploy:project:{project_id}:keys:1")
+
+    return _deployed_model_to_response(model_doc, include_api_key=True)
+
+
+@router.post("/import", status_code=201)
+async def import_model(
+    project_id: str = Query(...),
+    file: UploadFile = File(...),
+    user: UserInDB = Depends(get_current_user),
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    redis=Depends(get_redis),
+) -> DeployedModelResponse:
+    """
+    Import/upload a custom trained YOLO model file (.pt) and deploy it.
+    """
+    try:
+        project_oid = ObjectId(project_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid project ID")
+
+    project = await db.projects.find_one({"_id": project_oid})
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    await check_project_access(user, project, db, "admin")
+
+    filename = file.filename or ""
+    if not (filename.lower().endswith(".pt") or filename.lower().endswith(".pth") or filename.lower().endswith(".onnx")):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid model file. Only PyTorch YOLO weights (.pt) are supported.",
+        )
+
+    model_id = ObjectId()
+    contents = await file.read()
+    workspace_id = project.get("workspace_id", "default_workspace")
+    artifact_key = f"workspaces/{workspace_id}/projects/{project_id}/model-artifacts/imported-{str(model_id)}/best.pt"
+
+    try:
+        storage_client.upload_file(
+            file_bytes=contents,
+            filename=artifact_key,
+            content_type="application/octet-stream",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload model weights to storage: {exc}",
+        )
+
+    api_key = secrets.token_urlsafe(32)
+    now = datetime.utcnow()
+
+    model_doc = {
+        "_id": model_id,
+        "project_id": project_id,
+        "training_job_id": "imported",
+        "api_key": api_key,
+        "api_endpoint": f"/api/deploy/{str(model_id)}/predict",
+        "status": "active",
+        "artifact_url": f"minio://{artifact_key}",
+        "metrics_snapshot": None,
+        "created_at": now,
+    }
+
+    await db.deployed_models.insert_one(model_doc)
+
     await redis.delete(f"deploy:project:{project_id}:keys:0")
     await redis.delete(f"deploy:project:{project_id}:keys:1")
 

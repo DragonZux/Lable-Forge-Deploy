@@ -346,7 +346,7 @@ export interface TrainingJobResponse {
   project_id: string;
   dataset_version_id: string;
   status: TrainingJobStatus;
-  training_backend?: 'local' | 'colab';
+  training_backend?: 'local' | 'colab' | 'kaggle';
   map_score?: number;
   precision?: number;
   recall?: number;

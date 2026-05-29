@@ -12,7 +12,7 @@ from app.routers import (
 )
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.exceptions import register_exception_handlers
-from app.services.training_worker import shutdown_training_executor, start_training_worker
+# from app.services.training_worker import shutdown_training_executor, start_training_worker
 from contextlib import asynccontextmanager
 import asyncio
 import logging
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     await connect_redis()
     storage_client.ensure_bucket()
     
-    # 1. Create Indexes
+    # Create additional indexes (core indexes are in database.py)
     db = db_instance.db
     await db.workspace_invitations.create_index("token", unique=True)
     await db.workspace_invitations.create_index([("invitee_email", 1), ("workspace_id", 1), ("status", 1)])
@@ -36,9 +36,7 @@ async def lifespan(app: FastAPI):
     await db.project_invitations.create_index([("invitee_email", 1), ("project_id", 1), ("status", 1)])
     await db.notifications.create_index([("user_id", 1), ("is_read", 1)])
     await db.notifications.create_index([("user_id", 1), ("created_at", -1)])
-    await db.images.create_index([("project_id", 1), ("assigned_to_user_id", 1), ("assignment_status", 1)])
     await db.images.create_index([("project_id", 1), ("status", 1), ("created_at", -1)])
-    await db.annotations.create_index([("project_id", 1), ("created_by_user_id", 1)])
     await db.annotations.create_index([("project_id", 1), ("class_id", 1)])
     await db.annotation_audit_logs.create_index([("image_id", 1), ("created_at", -1)])
     await db.annotation_audit_logs.create_index([("project_id", 1), ("created_at", -1)])
@@ -63,18 +61,16 @@ async def lifespan(app: FastAPI):
 
     cleanup_task = asyncio.create_task(cleanup_invitations())
     
-    # Start training worker task
-    worker_task = asyncio.create_task(
-        start_training_worker(db_instance.db, redis_instance.client)
-    )
-    logger.info("Training worker task started")
+    # Local training worker task is disabled
+    worker_task = None
     
     yield
     
     # Shutdown
-    worker_task.cancel()
+    if worker_task:
+        worker_task.cancel()
     cleanup_task.cancel()
-    shutdown_training_executor()
+    # shutdown_training_executor()
     await close_db()
 
 app = FastAPI(
@@ -134,12 +130,3 @@ async def health_check():
         "redis": True,  # Simplified for now
         "version": settings.VERSION
     }
-
-# Include routers (placeholders for now)
-# app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
-# app.include_router(workspaces.router, prefix="/workspaces", tags=["Workspaces"])
-# app.include_router(projects.router, prefix="/projects", tags=["Projects"])
-# app.include_router(images.router, prefix="/images", tags=["Images"])
-# app.include_router(annotations.router, prefix="/annotations", tags=["Annotations"])
-# app.include_router(versions.router, prefix="/versions", tags=["Versions"])
-# app.include_router(training.router, prefix="/training", tags=["Training"])

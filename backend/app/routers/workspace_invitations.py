@@ -35,7 +35,8 @@ async def create_workspace_invitation(
         raise HTTPException(status_code=403, detail="Only owner or admin can invite members")
     
     # 2. Lookup invitee user and check if already a member.
-    invitee_user = await db.users.find_one({"email": invitation_data.email})
+    normalized_email = invitation_data.email.lower()
+    invitee_user = await db.users.find_one({"email": normalized_email})
     invitee_user_id = str(invitee_user["_id"]) if invitee_user else None
     if invitee_user_id and any(
         m["user_id"] == invitee_user_id for m in workspace.get("members", [])
@@ -45,7 +46,7 @@ async def create_workspace_invitation(
     # 3. Check for existing pending invitation
     existing_invite = await db.workspace_invitations.find_one({
         "workspace_id": workspace_id,
-        "invitee_email": invitation_data.email,
+        "invitee_email": normalized_email,
         "status": "pending"
     })
     if existing_invite:
@@ -59,7 +60,7 @@ async def create_workspace_invitation(
         "invited_by_user_id": str(current_user.id),
         "invited_by_name": current_user.full_name,
         "invited_by_avatar": getattr(current_user, "avatar_url", None),
-        "invitee_email": invitation_data.email,
+        "invitee_email": normalized_email,
         "invitee_user_id": invitee_user_id,
         "role": invitation_data.role,
         "status": "pending",

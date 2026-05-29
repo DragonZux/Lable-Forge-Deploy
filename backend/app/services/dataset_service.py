@@ -65,7 +65,12 @@ class DatasetService:
         augmentation = version.get("augmentation", {})
         version_oid = ObjectId(version_id)
 
-        if augmentation.get("rotation", 0):
+        project = await db.projects.find_one({"_id": ObjectId(project_id)})
+        if not project:
+            return
+        project_type = project.get("type", "object-detection")
+
+        if project_type != "classification" and augmentation.get("rotation", 0):
             await db.dataset_versions.update_one(
                 {"_id": version_oid},
                 {
@@ -94,25 +99,29 @@ class DatasetService:
         classes = await classes_cursor.to_list(None)
         class_map = {str(c["_id"]): i for i, c in enumerate(classes)}
         class_names = [c["name"] for c in classes]
+        class_id_to_name = {str(c["_id"]): c["name"] for c in classes}
 
         # COCO initialization
         img_idx_map = {str(img["_id"]): i+1 for i, img in enumerate(images)}
-        split_coco_data = {
-            split: {
-                "images": [],
-                "annotations": [],
-                "categories": [{"id": i+1, "name": name} for i, name in enumerate(class_names)]
-            } for split in ["train", "valid", "test"]
-        }
+        split_coco_data = {}
+        if project_type != "classification":
+            split_coco_data = {
+                split: {
+                    "images": [],
+                    "annotations": [],
+                    "categories": [{"id": i+1, "name": name} for i, name in enumerate(class_names)]
+                } for split in ["train", "valid", "test"]
+            }
 
         temp_dir = tempfile.mkdtemp(prefix=f"labelforge_version_{version_id}_")
         zip_path = os.path.join(tempfile.gettempdir(), f"version_{version_id}.zip")
         
         try:
-            # Create YOLO structure
-            for split in ["train", "valid", "test"]:
-                os.makedirs(os.path.join(temp_dir, split, "images"), exist_ok=True)
-                os.makedirs(os.path.join(temp_dir, split, "labels"), exist_ok=True)
+            # Create folder structures
+            if project_type != "classification":
+                for split in ["train", "valid", "test"]:
+                    os.makedirs(os.path.join(temp_dir, split, "images"), exist_ok=True)
+                    os.makedirs(os.path.join(temp_dir, split, "labels"), exist_ok=True)
 
             processed_count = 0
             for img_doc in images:
@@ -154,51 +163,64 @@ class DatasetService:
                         from PIL import ImageFilter
                         img = img.filter(ImageFilter.GaussianBlur(radius=blur_val))
                     
-                    split_coco_data[split]["images"].append({
-                        "id": img_idx_map[str(img_doc["_id"])],
-                        "file_name": orig_filename,
-                        "width": img.width,
-                        "height": img.height
-                    })
-
-                    processed_img_path = os.path.join(temp_dir, split, "images", orig_filename)
-                    img.save(processed_img_path)
-                    
                     annotations_cursor = db.annotations.find({"image_id": str(img_doc["_id"])})
                     annotations = await annotations_cursor.to_list(None)
-                    
-                    label_path = os.path.join(temp_dir, split, "labels", os.path.splitext(orig_filename)[0] + ".txt")
-                    img_w, img_h = img.size
-                    
-                    with open(label_path, "w") as f:
+
+                    if project_type == "classification":
+                        class_name = "unlabeled"
                         for ann in annotations:
-                            class_idx = class_map.get(ann["class_id"])
-                            if class_idx is None:
-                                continue
-                            
-                            if ann["type"] == "bbox":
-                                x, y, w, h = _transform_bbox(
-                                    ann.get("coordinates") or {},
-                                    original_size,
-                                    (img_w, img_h),
-                                    augmentation,
-                                )
-                                if w <= 0 or h <= 0:
+                            if ann.get("type") == "classification":
+                                cid = ann.get("class_id")
+                                if cid in class_id_to_name:
+                                    class_name = class_id_to_name[cid]
+                                    break
+                        class_dir = os.path.join(temp_dir, split, class_name)
+                        os.makedirs(class_dir, exist_ok=True)
+                        processed_img_path = os.path.join(class_dir, orig_filename)
+                    else:
+                        split_coco_data[split]["images"].append({
+                            "id": img_idx_map[str(img_doc["_id"])],
+                            "file_name": orig_filename,
+                            "width": img.width,
+                            "height": img.height
+                        })
+                        processed_img_path = os.path.join(temp_dir, split, "images", orig_filename)
+
+                    img.save(processed_img_path)
+                    
+                    if project_type != "classification":
+                        label_path = os.path.join(temp_dir, split, "labels", os.path.splitext(orig_filename)[0] + ".txt")
+                        img_w, img_h = img.size
+                        
+                        with open(label_path, "w") as f:
+                            for ann in annotations:
+                                class_idx = class_map.get(ann["class_id"])
+                                if class_idx is None:
                                     continue
-                                x_center = (x + w/2) / img_w
-                                y_center = (y + h/2) / img_h
-                                w_norm = w / img_w
-                                h_norm = h / img_h
-                                f.write(f"{class_idx} {x_center:.6f} {y_center:.6f} {w_norm:.6f} {h_norm:.6f}\n")
                                 
-                                split_coco_data[split]["annotations"].append({
-                                    "id": len(split_coco_data[split]["annotations"]) + 1,
-                                    "image_id": img_idx_map[str(img_doc["_id"])],
-                                    "category_id": class_idx + 1,
-                                    "bbox": [x, y, w, h],
-                                    "area": w * h,
-                                    "iscrowd": 0
-                                })
+                                if ann["type"] == "bbox":
+                                    x, y, w, h = _transform_bbox(
+                                        ann.get("coordinates") or {},
+                                        original_size,
+                                        (img_w, img_h),
+                                        augmentation,
+                                    )
+                                    if w <= 0 or h <= 0:
+                                        continue
+                                    x_center = (x + w/2) / img_w
+                                    y_center = (y + h/2) / img_h
+                                    w_norm = w / img_w
+                                    h_norm = h / img_h
+                                    f.write(f"{class_idx} {x_center:.6f} {y_center:.6f} {w_norm:.6f} {h_norm:.6f}\n")
+                                    
+                                    split_coco_data[split]["annotations"].append({
+                                        "id": len(split_coco_data[split]["annotations"]) + 1,
+                                        "image_id": img_idx_map[str(img_doc["_id"])],
+                                        "category_id": class_idx + 1,
+                                        "bbox": [x, y, w, h],
+                                        "area": w * h,
+                                        "iscrowd": 0
+                                    })
                 except Exception as e:
                     logger.warning("Error processing image %s: %s", filename, e)
                 
@@ -210,17 +232,29 @@ class DatasetService:
                         {"$set": {"processing_progress": progress}}
                     )
 
-            for split in ["train", "valid", "test"]:
-                coco_path = os.path.join(temp_dir, split, "labels", "annotations.json")
-                with open(coco_path, "w") as f:
-                    json.dump(split_coco_data[split], f, indent=2)
+            if project_type != "classification":
+                for split in ["train", "valid", "test"]:
+                    coco_path = os.path.join(temp_dir, split, "labels", "annotations.json")
+                    with open(coco_path, "w") as f:
+                        json.dump(split_coco_data[split], f, indent=2)
 
-            # Create data.yaml for YOLO
-            yaml_content = f"train: ./train/images\nval: ./valid/images\ntest: ./test/images\n\nnc: {len(class_names)}\nnames: {class_names}\n"
-            with open(os.path.join(temp_dir, "data.yaml"), "w") as f:
-                f.write(yaml_content)
+                # Create data.yaml for YOLO
+                split_counts = {
+                    split: len(split_coco_data[split]["images"])
+                    for split in ["train", "valid", "test"]
+                }
+                val_path = "./valid/images" if split_counts["valid"] else "./train/images"
+                test_path = (
+                    "./test/images"
+                    if split_counts["test"]
+                    else val_path
+                )
+                yaml_content = f"train: ./train/images\nval: {val_path}\ntest: {test_path}\n\nnc: {len(class_names)}\nnames: {class_names}\n"
+                with open(os.path.join(temp_dir, "data.yaml"), "w") as f:
+                    f.write(yaml_content)
 
-            zip_filename = f"version_{version_id}.zip"
+            workspace_id = project.get("workspace_id", "default_workspace") if project else "default_workspace"
+            zip_filename = f"workspaces/{workspace_id}/projects/{project_id}/exports/version_{version_id}.zip"
             with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
                 for root, dirs, files in os.walk(temp_dir):
                     for file in files:

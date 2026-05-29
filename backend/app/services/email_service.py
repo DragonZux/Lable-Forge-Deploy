@@ -58,9 +58,10 @@ class EmailService:
         config_error = _email_config_error()
         if config_error:
             logger.warning(
-                "Skipped workspace invitation email to %s: %s",
+                "Skipped workspace invitation email to %s: %s. token=%s",
                 invitee_email,
                 config_error,
+                invitation_token,
             )
             return
 
@@ -108,9 +109,10 @@ class EmailService:
         config_error = _email_config_error()
         if config_error:
             logger.warning(
-                "Skipped project invitation email to %s: %s",
+                "Skipped project invitation email to %s: %s. token=%s",
                 invitee_email,
                 config_error,
+                invitation_token,
             )
             return
 
@@ -143,3 +145,39 @@ class EmailService:
             logger.info("Sent project invitation email to %s", invitee_email)
         except Exception as e:
             logger.error("Failed to send project invitation email to %s: %s", invitee_email, str(e))
+
+    @staticmethod
+    async def send_password_reset(
+        recipient_email: str,
+        recipient_name: str,
+        reset_token: str,
+    ):
+        config_error = _email_config_error()
+        if config_error:
+            logger.warning(
+                "Skipped password reset email to %s: %s. token=%s",
+                recipient_email,
+                config_error,
+                reset_token,
+            )
+            return
+
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?token={reset_token}"
+
+        message_schema = MessageSchema(
+            subject="Reset Your Password - LabelForge",
+            recipients=[recipient_email],
+            template_body={
+                "recipient_name": recipient_name,
+                "reset_url": reset_url,
+            },
+            subtype=MessageType.html,
+        )
+
+        fm = FastMail(conf)
+        try:
+            await fm.send_message(message_schema, template_name="password_reset.html")
+            logger.info("Sent password reset email to %s", recipient_email)
+        except Exception as e:
+            logger.error("Failed to send password reset email to %s: %s", recipient_email, str(e))
+

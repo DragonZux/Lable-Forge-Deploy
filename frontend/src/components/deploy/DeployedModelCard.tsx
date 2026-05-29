@@ -5,6 +5,7 @@ import { useTestInference } from '@/hooks/useDeploy'
 import { emitAppToast } from '@/lib/toast-events'
 import { Card } from '@/components/ui/Card'
 import { DeployedModel, PredictionResult } from '@/hooks/useDeploy'
+import { ClassLabel } from '@/types'
 import { 
   Globe, 
   Copy, 
@@ -25,9 +26,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 interface DeployedModelCardProps {
   model: DeployedModel
   canTestInference?: boolean
+  classLabels?: ClassLabel[]
 }
 
-export default function DeployedModelCard({ model, canTestInference = false }: DeployedModelCardProps) {
+export default function DeployedModelCard({ 
+  model, 
+  canTestInference = false,
+  classLabels = []
+}: DeployedModelCardProps) {
   const { testInference, isLoading: isTesting } = useTestInference(model.id)
   const [apiKeyVisible, setApiKeyVisible] = useState(false)
   const [selectedSnippet, setSelectedSnippet] = useState<'python' | 'javascript' | 'curl'>('python')
@@ -138,7 +144,7 @@ predictions.forEach(pred => {
           
           <div className="flex items-center gap-2">
             <span className="text-[10px] font-mono font-bold text-muted-foreground uppercase tracking-wider bg-muted px-2 py-1 rounded">
-              Model Ref: {model.training_job_id.slice(-8)}
+              Model Ref: {model.training_job_id === 'imported' ? 'Imported' : model.training_job_id.slice(-8)}
             </span>
           </div>
         </div>
@@ -318,24 +324,31 @@ predictions.forEach(pred => {
                             className="max-h-80 w-full object-contain"
                           />
                           <div className="absolute inset-0">
-                            {testResult.predictions.map((pred, idx) => (
-                              pred.bbox ? (
+                            {testResult.predictions.map((pred, idx) => {
+                              const label = classLabels.find((l) => l.name.toLowerCase() === pred.class_name.toLowerCase())
+                              const color = label?.color || '#2563eb'
+                              return pred.bbox ? (
                                 <div
                                   key={`${pred.class_name}-${idx}`}
-                                  className="absolute rounded-md border-2 border-accent bg-accent/10 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]"
+                                  className="absolute rounded-md border-2 shadow-[0_0_0_1px_rgba(255,255,255,0.7)]"
                                   style={{
                                     left: `${pred.bbox.x * 100}%`,
                                     top: `${pred.bbox.y * 100}%`,
                                     width: `${pred.bbox.width * 100}%`,
                                     height: `${pred.bbox.height * 100}%`,
+                                    borderColor: color,
+                                    backgroundColor: `${color}1a`,
                                   }}
                                 >
-                                  <span className="absolute left-0 top-0 -translate-y-full rounded-t-md bg-accent px-2 py-1 text-[10px] font-bold text-white shadow-sm">
+                                  <span 
+                                    className="absolute left-0 top-0 -translate-y-full rounded-t-md px-2 py-1 text-[10px] font-bold text-white shadow-sm"
+                                    style={{ backgroundColor: color }}
+                                  >
                                     {idx + 1}
                                   </span>
                                 </div>
                               ) : null
-                            ))}
+                            })}
                           </div>
                         </div>
                         <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
@@ -348,19 +361,29 @@ predictions.forEach(pred => {
                       {testResult.predictions.length === 0 ? (
                         <p className="text-xs text-muted-foreground text-center py-4">No objects detected</p>
                       ) : (
-                        testResult.predictions.map((pred, idx) => (
-                          <div key={idx} className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-5 w-5 items-center justify-center rounded-md bg-accent text-[10px] font-bold text-white">
-                                {idx + 1}
+                        testResult.predictions.map((pred, idx) => {
+                          const label = classLabels.find((l) => l.name.toLowerCase() === pred.class_name.toLowerCase())
+                          const color = label?.color || '#2563eb'
+                          return (
+                            <div key={idx} className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div 
+                                  className="flex h-5 w-5 items-center justify-center rounded-md text-[10px] font-bold text-white"
+                                  style={{ backgroundColor: color }}
+                                >
+                                  {idx + 1}
+                                </div>
+                                <span className="text-xs font-bold text-foreground truncate">{pred.class_name}</span>
                               </div>
-                              <span className="text-xs font-bold text-foreground truncate">{pred.class_name}</span>
+                              <span 
+                                className="text-[10px] font-mono font-bold"
+                                style={{ color: color }}
+                              >
+                                {(pred.confidence * 100).toFixed(1)}%
+                              </span>
                             </div>
-                            <span className="text-[10px] font-mono font-bold text-accent">
-                              {(pred.confidence * 100).toFixed(1)}%
-                            </span>
-                          </div>
-                        ))
+                          )
+                        })
                       )}
                     </div>
                   </motion.div>

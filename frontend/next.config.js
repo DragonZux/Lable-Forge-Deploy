@@ -23,7 +23,6 @@ const allowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS || '')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = withBundleAnalyzer({
-  output: 'standalone',
   turbopack: {
     root: path.join(__dirname, '.'),
   },
@@ -47,7 +46,7 @@ const nextConfig = withBundleAnalyzer({
         headers: [
           {
             key: 'Cross-Origin-Opener-Policy',
-            value: 'unsafe-none',
+            value: 'same-origin-allow-popups',
           },
         ],
       },

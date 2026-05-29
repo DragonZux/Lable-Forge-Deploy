@@ -26,7 +26,7 @@ if os.path.exists("backend"):
 
 # Local development defaults. Existing shell env values are preserved.
 os.environ.setdefault("MONGO_URI", "mongodb://localhost:27018")
-os.environ.setdefault("MONGO_DB_NAME", "visionflow")
+os.environ.setdefault("MONGO_DB_NAME", "labelforge")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("MINIO_ENDPOINT", "localhost:9000")
 os.environ.setdefault("MINIO_PUBLIC_ENDPOINT", "http://localhost:9000")

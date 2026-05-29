@@ -162,8 +162,7 @@ async def decline_workspace_invitation(
             and processed.get("invitee_email") == current_user.email
         ):
             return {
-                "message": "Already joined project",
-                "project_id": processed["project_id"],
+                "message": "Already joined workspace",
                 "workspace_id": processed["workspace_id"],
             }
         raise HTTPException(status_code=404, detail="Invitation not found or already processed")

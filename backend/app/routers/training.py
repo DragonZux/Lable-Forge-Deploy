@@ -23,7 +23,7 @@ from ..models.user import UserInDB
 from ..utils.auth import get_current_user
 from ..core.database import get_database
 from ..core.redis import get_redis
-from ..core.config import settings
+from ..core.config import settings, get_active_backend_url
 from ..core.storage import storage_client
 from ..routers.projects import check_project_access
 
@@ -76,6 +76,19 @@ def _coerce_training_config(raw_config: dict | None) -> dict:
         config[key] = max(minimum, min(maximum, value))
 
     return config
+
+
+def _serialize_job_for_pub_sub(job: dict) -> str:
+    """Convert job document to JSON string for Redis Pub/Sub."""
+    job_copy = job.copy()
+    job_copy["_id"] = str(job_copy["_id"])
+    if job_copy.get("created_at"):
+        job_copy["created_at"] = job_copy["created_at"].isoformat()
+    if job_copy.get("started_at"):
+        job_copy["started_at"] = job_copy["started_at"].isoformat()
+    if job_copy.get("finished_at"):
+        job_copy["finished_at"] = job_copy["finished_at"].isoformat()
+    return json.dumps(job_copy)
 
 
 def _minio_artifact_exists(model_url: str | None) -> bool:
@@ -172,9 +185,18 @@ async def create_training_job(
         raise HTTPException(status_code=404, detail="Dataset version not found")
 
     # Get backend choice
-    training_backend = payload.get("backend", "local")
-    if training_backend not in ["local", "colab"]:
-        raise HTTPException(status_code=400, detail="Invalid backend. Must be 'local' or 'colab'")
+    training_backend = payload.get("backend", "colab")
+    if training_backend not in ["colab", "kaggle"]:
+        raise HTTPException(status_code=400, detail="Invalid backend. Must be 'colab' or 'kaggle'")
+
+    if training_backend == "kaggle":
+        kaggle_username = getattr(user, "kaggle_username", None)
+        kaggle_key = getattr(user, "kaggle_key", None)
+        if not kaggle_username or not kaggle_key:
+            raise HTTPException(
+                status_code=400,
+                detail="Kaggle API credentials not found. Please navigate to Settings to link your Kaggle Account first."
+            )
 
     training_config = _coerce_training_config(payload.get("training_config"))
 
@@ -208,9 +230,78 @@ async def create_training_job(
     if training_backend == "colab":
         # Colab: keep status as queued, will generate link on demand
         pass
+    elif training_backend == "kaggle":
+        # Kaggle: run automated headless push task in the background
+        from ..services.kaggle_service import launch_kaggle_headless_job
+        
+        backend_url = get_active_backend_url()
+        backend_url = backend_url.rstrip("/")
+        dataset_url = f"{backend_url}/api/versions/{dataset_version_id}/download"
+        callback_url = f"{backend_url}/api/training/{result.inserted_id}/colab-callback"
+        
+        params = {
+            "JOB_ID": str(result.inserted_id),
+            "DATASET_URL": dataset_url,
+            "CALLBACK_URL": callback_url,
+            "ARCHITECTURE": training_config["architecture"],
+            "EPOCHS": str(training_config["epochs"]),
+            "IMAGE_SIZE": str(training_config["image_size"]),
+            "BATCH_SIZE": str(training_config["batch_size"]),
+            "LEARNING_RATE": str(training_config["learning_rate"]),
+            "PATIENCE": str(training_config["patience"]),
+            "CONFIDENCE_THRESHOLD": str(training_config["confidence_threshold"]),
+        }
+        
+        await db.training_jobs.update_one(
+            {"_id": result.inserted_id},
+            {
+                "$set": {
+                    "status": "preparing",
+                    "started_at": datetime.utcnow()
+                }
+            }
+        )
+        
+        # Launch in background async task so endpoint returns immediately
+        async def run_kaggle_push():
+            res = await launch_kaggle_headless_job(
+                user_kaggle_username=kaggle_username,
+                user_kaggle_key=kaggle_key,
+                job_id=str(result.inserted_id),
+                params=params
+            )
+            if res["status"] == "success":
+                await db.training_jobs.update_one(
+                    {"_id": result.inserted_id},
+                    {
+                        "$set": {
+                            "status": "training",
+                            "started_at": datetime.utcnow(),
+                            "artifact_url": f"Kaggle: {res['kaggle_url']}"
+                        }
+                    }
+                )
+            else:
+                await db.training_jobs.update_one(
+                    {"_id": result.inserted_id},
+                    {
+                        "$set": {
+                            "status": "failed",
+                            "error_message": f"Kaggle automated launch failed: {res['error']}",
+                            "finished_at": datetime.utcnow()
+                        }
+                    }
+                )
+            # Invalidate redis cache and trigger pubsub updates
+            await redis.delete(f"training:project:{project_id}")
+            channel = f"job:{result.inserted_id}"
+            updated_job = await db.training_jobs.find_one({"_id": result.inserted_id})
+            await redis.publish(channel, _serialize_job_for_pub_sub(updated_job))
+            
+        asyncio.create_task(run_kaggle_push())
     else:
-        # Local: push to training queue
-        await redis.rpush("training_queue", str(result.inserted_id))
+        # Fallback safety (local compute is disabled)
+        pass
 
     # Invalidate cache
     cache_key = f"training:project:{project_id}"
@@ -360,11 +451,11 @@ async def auto_label_untrained_images(
                         if not class_doc:
                             continue
 
-                        xywhn = box.xywhn[0].tolist()
-                        x = max(0.0, min(1.0, float(xywhn[0] - xywhn[2] / 2)))
-                        y = max(0.0, min(1.0, float(xywhn[1] - xywhn[3] / 2)))
-                        width = max(0.0, min(1.0 - x, float(xywhn[2])))
-                        height = max(0.0, min(1.0 - y, float(xywhn[3])))
+                        xyxy = box.xyxy[0].tolist()
+                        x = max(0.0, min(float(image.width), float(xyxy[0])))
+                        y = max(0.0, min(float(image.height), float(xyxy[1])))
+                        width = max(0.0, min(float(image.width) - x, float(xyxy[2] - xyxy[0])))
+                        height = max(0.0, min(float(image.height) - y, float(xyxy[3] - xyxy[1])))
 
                         await db.annotations.insert_one({
                             "image_id": image_id,
@@ -391,7 +482,7 @@ async def auto_label_untrained_images(
                 created_annotations += image_annotation_count
                 await db.images.update_one(
                     {"_id": image_doc["_id"]},
-                    {"$set": {"status": "annotated", "annotation_status": "annotated"}},
+                    {"$set": {"status": "annotated", "annotation_status": "annotated", "split": "train"}},
                 )
 
         actual_annotation_count = await db.annotations.count_documents({"project_id": project_id})
@@ -499,14 +590,8 @@ async def delete_training_job(
     project = await db.projects.find_one({"_id": ObjectId(job["project_id"])})
     await check_project_access(user, project, db, "admin")
 
-    if job.get("status") in ["preparing", "training", "evaluating"]:
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot delete a training job while it is running.",
-        )
-
     await db.training_jobs.delete_one({"_id": job_oid})
-    await redis.lrem("training_queue", 0, job_id)
+    # Local training queue cleanup is not needed
     await redis.delete(f"training:project:{job['project_id']}")
 
     return {"status": "deleted", "job_id": job_id}
@@ -630,7 +715,19 @@ async def generate_colab_link(
     github_user = os.environ.get("GITHUB_USER", "")
     github_repo = os.environ.get("GITHUB_REPO", "")
     github_branch = os.environ.get("GITHUB_BRANCH", "main")
-    backend_url = settings.BACKEND_PUBLIC_URL.strip() or os.environ.get("BACKEND_PUBLIC_URL", "").strip() or os.environ.get("BACKEND_URL", "http://localhost:8000")
+    backend_url = get_active_backend_url()
+
+    project_type = project.get("type", "object-detection")
+    if project_type == "classification":
+        github_user = os.environ.get("GITHUB_CLASSIFICATION_USER", "DragonZux")
+        github_repo = os.environ.get("GITHUB_CLASSIFICATION_REPO", "Train-Colab-Classification")
+        github_branch = os.environ.get("GITHUB_CLASSIFICATION_BRANCH", "main")
+        notebook_filename = os.environ.get("GITHUB_CLASSIFICATION_NOTEBOOK", "train_classification_notebook.ipynb")
+    else:
+        github_user = os.environ.get("GITHUB_USER", github_user)
+        github_repo = os.environ.get("GITHUB_REPO", github_repo)
+        github_branch = os.environ.get("GITHUB_BRANCH", github_branch)
+        notebook_filename = os.environ.get("GITHUB_NOTEBOOK", "train_notebook.ipynb")
 
     if not github_user or not github_repo:
         raise HTTPException(
@@ -663,7 +760,7 @@ async def generate_colab_link(
     )
     colab_url = (
         f"https://colab.research.google.com/github/"
-        f"{github_user}/{github_repo}/blob/{github_branch}/train_notebook.ipynb"
+        f"{github_user}/{github_repo}/blob/{github_branch}/{notebook_filename}"
         f"?params={colab_param_pairs}"
     )
 
@@ -704,11 +801,14 @@ async def presign_upload(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Only allow presign for colab-configured jobs (safety)
-    if job.get("training_backend") != "colab":
-        raise HTTPException(status_code=400, detail="Presign upload only allowed for Colab jobs")
+    # Only allow presign for colab or kaggle configured jobs (safety)
+    if job.get("training_backend") not in ("colab", "kaggle"):
+        raise HTTPException(status_code=400, detail="Presign upload only allowed for Colab/Kaggle jobs")
 
-    artifact_key = f"model-artifacts/{job_id}/best.pt"
+    project_id = job["project_id"]
+    project = await db.projects.find_one({"_id": ObjectId(project_id)})
+    workspace_id = project.get("workspace_id", "default_workspace") if project else "default_workspace"
+    artifact_key = f"workspaces/{workspace_id}/projects/{project_id}/model-artifacts/{job_id}/best.pt"
     upload_url = storage_client.generate_presigned_put_url(artifact_key, expires=3600)
 
     return {"upload_url": upload_url, "artifact_key": artifact_key, "expires": 3600}
@@ -731,14 +831,17 @@ async def upload_artifact(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    if job.get("training_backend") != "colab":
-        raise HTTPException(status_code=400, detail="Upload only allowed for Colab jobs")
+    if job.get("training_backend") not in ("colab", "kaggle"):
+        raise HTTPException(status_code=400, detail="Upload only allowed for Colab/Kaggle jobs")
 
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Uploaded artifact is empty")
 
-    artifact_key = f"model-artifacts/{job_id}/best.pt"
+    project_id = job["project_id"]
+    project = await db.projects.find_one({"_id": ObjectId(project_id)})
+    workspace_id = project.get("workspace_id", "default_workspace") if project else "default_workspace"
+    artifact_key = f"workspaces/{workspace_id}/projects/{project_id}/model-artifacts/{job_id}/best.pt"
     storage_client.upload_file(
         file_bytes=content,
         filename=artifact_key,

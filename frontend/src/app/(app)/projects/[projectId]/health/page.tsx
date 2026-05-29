@@ -72,7 +72,9 @@ export default function HealthCheckPage() {
 
   const auditChecks = useMemo<AuditCheck[]>(() => {
     if (!health?.validation) return []
-    return [
+    const isClassification = health.project_type === 'classification'
+
+    const checks: AuditCheck[] = [
       {
         id: 'duplicate_images',
         label: 'Duplicate images',
@@ -80,27 +82,35 @@ export default function HealthCheckPage() {
         count: health.validation.duplicate_images.length,
         tone: health.validation.duplicate_images.length > 0 ? 'warning' : 'success',
       },
-      {
-        id: 'small_boxes',
-        label: 'Tiny boxes',
-        description: 'Annotations that may be too small to train reliably.',
-        count: health.validation.small_boxes.length,
-        tone: health.validation.small_boxes.length > 0 ? 'warning' : 'success',
-      },
-      {
-        id: 'large_boxes',
-        label: 'Oversized boxes',
-        description: 'Boxes covering most of the image area.',
-        count: health.validation.large_boxes.length,
-        tone: health.validation.large_boxes.length > 0 ? 'warning' : 'success',
-      },
-      {
-        id: 'out_of_bounds',
-        label: 'Out of bounds',
-        description: 'Coordinates drawn outside the image boundary.',
-        count: health.validation.out_of_bounds_annotations.length,
-        tone: health.validation.out_of_bounds_annotations.length > 0 ? 'danger' : 'success',
-      },
+    ]
+
+    if (!isClassification) {
+      checks.push(
+        {
+          id: 'small_boxes',
+          label: 'Tiny boxes',
+          description: 'Annotations that may be too small to train reliably.',
+          count: health.validation.small_boxes.length,
+          tone: health.validation.small_boxes.length > 0 ? 'warning' : 'success',
+        },
+        {
+          id: 'large_boxes',
+          label: 'Oversized boxes',
+          description: 'Boxes covering most of the image area.',
+          count: health.validation.large_boxes.length,
+          tone: health.validation.large_boxes.length > 0 ? 'warning' : 'success',
+        },
+        {
+          id: 'out_of_bounds',
+          label: 'Out of bounds',
+          description: 'Coordinates drawn outside the image boundary.',
+          count: health.validation.out_of_bounds_annotations.length,
+          tone: health.validation.out_of_bounds_annotations.length > 0 ? 'danger' : 'success',
+        }
+      )
+    }
+
+    checks.push(
       {
         id: 'unused_classes',
         label: 'Unused classes',
@@ -114,17 +124,20 @@ export default function HealthCheckPage() {
         description: 'Classes missing from one or more dataset splits.',
         count: health.validation.class_split_imbalance.length,
         tone: health.validation.class_split_imbalance.length > 0 ? 'warning' : 'success',
-      },
-    ]
+      }
+    )
+
+    return checks
   }, [health])
 
   const score = useMemo(() => {
     if (!health) return 0
     const validation = health.validation
+    const isClassification = health.project_type === 'classification'
     const duplicateCount = validation?.duplicate_images.length || 0
-    const smallBoxes = validation?.small_boxes.length || 0
-    const largeBoxes = validation?.large_boxes.length || 0
-    const outOfBounds = validation?.out_of_bounds_annotations.length || 0
+    const smallBoxes = isClassification ? 0 : (validation?.small_boxes.length || 0)
+    const largeBoxes = isClassification ? 0 : (validation?.large_boxes.length || 0)
+    const outOfBounds = isClassification ? 0 : (validation?.out_of_bounds_annotations.length || 0)
     const unusedClasses = validation?.unused_classes.length || 0
     const splitGaps = validation?.class_split_imbalance.length || 0
     const unannotatedPenalty = Math.max(0, 100 - (health.summary.annotated_percent || 0)) * 0.15
@@ -226,18 +239,37 @@ export default function HealthCheckPage() {
           description={`${health.summary.annotated_percent}% of the dataset has labels`}
           icon={<CheckCircle2 className="h-5 w-5" />}
         />
-        <MetricCard
-          label="Total Annotations"
-          value={health.summary.total_annotations.toLocaleString()}
-          description="Labels saved across all images"
-          icon={<Layers className="h-5 w-5" />}
-        />
-        <MetricCard
-          label="Annotation Density"
-          value={health.summary.avg_annotations_per_image.toFixed(2)}
-          description="Average labels per image"
-          icon={<Activity className="h-5 w-5" />}
-        />
+        {health.project_type === 'classification' ? (
+          <>
+            <MetricCard
+              label="Unannotated Images"
+              value={health.images_without_annotations.toLocaleString()}
+              description="Images that need classification"
+              icon={<AlertCircle className="h-5 w-5" />}
+            />
+            <MetricCard
+              label="Total Classes"
+              value={health.class_balance.length.toString()}
+              description="Active classification classes"
+              icon={<Tags className="h-5 w-5" />}
+            />
+          </>
+        ) : (
+          <>
+            <MetricCard
+              label="Total Annotations"
+              value={health.summary.total_annotations.toLocaleString()}
+              description="Labels saved across all images"
+              icon={<Layers className="h-5 w-5" />}
+            />
+            <MetricCard
+              label="Annotation Density"
+              value={health.summary.avg_annotations_per_image.toFixed(2)}
+              description="Average labels per image"
+              icon={<Activity className="h-5 w-5" />}
+            />
+          </>
+        )}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
@@ -382,6 +414,7 @@ export default function HealthCheckPage() {
             issueCount={issueCount}
             criticalCount={criticalCount}
             annotatedPercent={health.summary.annotated_percent}
+            projectType={health.project_type}
           />
         </Panel>
       </section>
@@ -678,12 +711,32 @@ function getAuditRows(category: AuditCategory, health: NonNullable<ReturnType<ty
   }
 }
 
-function ActionList({ projectId, score, issueCount, criticalCount, annotatedPercent }: { projectId: string; score: number; issueCount: number; criticalCount: number; annotatedPercent: number }) {
+function ActionList({
+  projectId,
+  score,
+  issueCount,
+  criticalCount,
+  annotatedPercent,
+  projectType,
+}: {
+  projectId: string
+  score: number
+  issueCount: number
+  criticalCount: number
+  annotatedPercent: number
+  projectType?: string
+}) {
+  const isClassification = projectType === 'classification'
   const actions = [
     {
       icon: criticalCount > 0 ? <ShieldAlert className="h-4 w-4" /> : <ShieldCheck className="h-4 w-4" />,
       title: criticalCount > 0 ? 'Fix critical annotation errors' : 'Critical checks passed',
-      description: criticalCount > 0 ? 'Start with out-of-bounds coordinates before training.' : 'No blocking validation errors were found.',
+      description:
+        criticalCount > 0
+          ? isClassification
+            ? 'Fix any invalid classes or duplicate images before training.'
+            : 'Start with out-of-bounds coordinates before training.'
+          : 'No blocking validation errors were found.',
       href: `/projects/${projectId}/annotate`,
       tone: criticalCount > 0 ? 'danger' : 'success',
     },

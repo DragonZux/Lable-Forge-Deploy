@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Literal, Optional
 from datetime import datetime
 
 TrainingJobStatus = Literal["queued", "preparing", "training", "evaluating", "done", "failed", "awaiting_colab"]
-TrainingBackend = Literal["local", "colab"]
+TrainingBackend = Literal["local", "colab", "kaggle"]
 
 class TrainingJobInDB(BaseModel):
     id: str = Field(alias="_id")

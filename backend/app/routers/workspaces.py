@@ -107,6 +107,27 @@ async def create_workspace(
     )
 
 
+@router.get("/invitations/my", response_model=List[WorkspaceInvitationResponse])
+async def get_my_workspace_invitations(
+    db: AsyncIOMotorDatabase = Depends(get_database),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get all pending workspace invitations for the current user.
+    """
+    cursor = db.workspace_invitations.find({
+        "invitee_email": current_user.email,
+        "status": "pending"
+    }).sort("created_at", -1)
+
+    invitations = []
+    async for doc in cursor:
+        doc["id"] = str(doc["_id"])
+        invitations.append(WorkspaceInvitationResponse(**doc))
+
+    return invitations
+
+
 @router.get("/{workspace_id}")
 async def get_workspace(
     workspace_id: str,
@@ -368,27 +389,6 @@ async def update_member_role(
     await cache_delete(f"workspaces:{user_id}")
 
     return {"status": "success", "user_id": user_id, "role": role_data.role}
-
-
-@router.get("/invitations/my", response_model=List[WorkspaceInvitationResponse])
-async def get_my_workspace_invitations(
-    db: AsyncIOMotorDatabase = Depends(get_database),
-    current_user: UserInDB = Depends(get_current_user)
-):
-    """
-    Get all pending workspace invitations for the current user.
-    """
-    cursor = db.workspace_invitations.find({
-        "invitee_email": current_user.email,
-        "status": "pending"
-    }).sort("created_at", -1)
-    
-    invitations = []
-    async for doc in cursor:
-        doc["id"] = str(doc["_id"])
-        invitations.append(WorkspaceInvitationResponse(**doc))
-        
-    return invitations
 
 
 @router.delete("/{workspace_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

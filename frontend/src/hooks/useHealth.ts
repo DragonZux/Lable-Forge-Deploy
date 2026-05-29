@@ -5,6 +5,7 @@ import { apiGet } from '@/lib/api'
 
 export interface ProjectHealth {
   project_id: string
+  project_type?: 'object-detection' | 'classification'
   timestamp: string
   summary: {
     total_images: number

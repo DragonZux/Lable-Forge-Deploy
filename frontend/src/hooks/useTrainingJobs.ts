@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useCallback, useEffect } from 'react'
-import { API_BASE_URL, apiDelete, apiGet, apiPost } from '@/lib/api'
-import { getAccessToken } from '@/lib/auth'
+import { apiDelete, apiGet, apiPost } from '@/lib/api'
 import { TrainingJob } from '@/types'
 
 export function useTrainingJobs(projectId: string) {
@@ -37,7 +36,7 @@ export function useCreateTrainingJob(projectId: string) {
   const createJob = useCallback(
     async (
       datasetVersionId: string,
-      backend: 'local' | 'colab' = 'local',
+      backend: 'local' | 'colab' | 'kaggle' = 'local',
       trainingConfig?: Record<string, any>
     ) => {
       if (!projectId) return
@@ -138,15 +137,8 @@ export function useTrainingJobStream(jobId: string) {
   useEffect(() => {
     if (!jobId) return
 
-    const baseUrl = API_BASE_URL.replace(/\/$/, '')
-    const token = getAccessToken()
-    const streamUrl = token
-      ? `${baseUrl}/training/${jobId}/stream?access_token=${encodeURIComponent(token)}`
-      : `${baseUrl}/training/${jobId}/stream`
-
     const eventSource = new EventSource(
-      streamUrl,
-      { withCredentials: true }
+      `/api/training/${jobId}/stream`
     )
 
     setIsConnected(true)

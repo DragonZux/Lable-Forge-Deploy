@@ -1,14 +1,11 @@
-FROM python:3.11-slim AS runtime
-
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Cài đặt các thư viện hệ thống cần thiết cho OpenCV, Ultralytics (YOLO)
+RUN apt-get update && apt-get install -y \
     build-essential \
-    curl \
+    libpq-dev \
     libgl1 \
     libglib2.0-0 \
     libgomp1 \
@@ -17,11 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
+COPY . .
 
-EXPOSE 8000
-
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).read()" || exit 1
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+# Hugging Face yêu cầu ứng dụng lắng nghe trên port 7860
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]

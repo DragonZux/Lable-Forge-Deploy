@@ -4,10 +4,11 @@ import React, { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useDatasetVersions } from '@/hooks/useDatasetVersions'
 import CreateVersionModal from '@/components/dataset/CreateVersionModal'
+import ImportZipModal from '@/components/dataset/ImportZipModal'
 import VersionCard from '@/components/dataset/VersionCard'
 import { Button } from '@/components/ui'
 import { SectionLabel } from '@/components/ui/SectionLabel'
-import { GitBranch, PackagePlus } from 'lucide-react'
+import { GitBranch, PackagePlus, FolderArchive } from 'lucide-react'
 import { useProject } from '@/hooks/useProjects'
 import { usePermissions } from '@/hooks/usePermissions'
 
@@ -19,6 +20,7 @@ export default function DatasetVersionsPage() {
 
   const { versions, isLoading, fetchVersions } = useDatasetVersions(projectId)
   const [showModal, setShowModal] = useState(false)
+  const [showImportModal, setShowImportModal] = useState(false)
 
   useEffect(() => {
     fetchVersions()
@@ -26,6 +28,11 @@ export default function DatasetVersionsPage() {
 
   const handleCreateSuccess = () => {
     setShowModal(false)
+    fetchVersions()
+  }
+
+  const handleImportSuccess = () => {
+    setShowImportModal(false)
     fetchVersions()
   }
 
@@ -40,10 +47,16 @@ export default function DatasetVersionsPage() {
           <p className="page-subtitle mt-3">Manage and export different versions of your dataset</p>
         </div>
         {canAnnotate && (
-          <Button onClick={() => setShowModal(true)} className="relative z-10 h-12 px-5">
-            <PackagePlus className="h-4 w-4" />
-            Generate New Version
-          </Button>
+          <div className="relative z-10 flex gap-3">
+            <Button onClick={() => setShowImportModal(true)} variant="secondary" className="h-12 px-5">
+              <FolderArchive className="h-4 w-4 mr-2" />
+              Import ZIP
+            </Button>
+            <Button onClick={() => setShowModal(true)} className="h-12 px-5">
+              <PackagePlus className="h-4 w-4 mr-2" />
+              Generate New Version
+            </Button>
+          </div>
         )}
       </div>
 
@@ -61,9 +74,14 @@ export default function DatasetVersionsPage() {
             Create your first dataset version to organize and export images
           </p>
           {canAnnotate && (
-            <Button onClick={() => setShowModal(true)} size="sm">
-              Create First Version
-            </Button>
+            <div className="flex gap-3">
+              <Button onClick={() => setShowImportModal(true)} variant="secondary" size="sm">
+                Import ZIP
+              </Button>
+              <Button onClick={() => setShowModal(true)} size="sm">
+                Create First Version
+              </Button>
+            </div>
           )}
         </div>
       ) : (
@@ -86,6 +104,14 @@ export default function DatasetVersionsPage() {
           projectId={projectId}
           onClose={() => setShowModal(false)}
           onSuccess={handleCreateSuccess}
+        />
+      )}
+
+      {showImportModal && canAnnotate && (
+        <ImportZipModal
+          projectId={projectId}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={handleImportSuccess}
         />
       )}
     </div>

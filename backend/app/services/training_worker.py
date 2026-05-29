@@ -142,6 +142,9 @@ async def process_training_job(job_id: str, db: AsyncIOMotorDatabase, redis):
             int(job.get("total_epochs", training_config.get("epochs", 50))),
         )
 
+        project = await db.projects.find_one({"_id": ObjectId(job["project_id"])})
+        workspace_id = project.get("workspace_id", "default_workspace") if project else "default_workspace"
+
         await update_job_status(job_oid, "training", db, redis, job_channel)
         loop = asyncio.get_running_loop()
         try:
@@ -152,6 +155,7 @@ async def process_training_job(job_id: str, db: AsyncIOMotorDatabase, redis):
                 dataset_version,
                 training_config,
                 total_epochs,
+                workspace_id,
             )
         except BrokenExecutor as exc:
             shutdown_training_executor()
@@ -231,6 +235,7 @@ def _train_yolo_model(
     dataset_version: dict,
     training_config: dict,
     total_epochs: int,
+    workspace_id: str = "default_workspace",
 ) -> dict:
     """Run YOLO training in a worker process and upload best.pt to MinIO."""
     os.environ.setdefault("OMP_NUM_THREADS", "2")
@@ -242,13 +247,25 @@ def _train_yolo_model(
     torch.set_num_threads(min(2, os.cpu_count() or 1))
 
     version_id = str(dataset_version["_id"])
-    zip_filename = f"version_{version_id}.zip"
+    project_id = dataset_version["project_id"]
+    new_zip_filename = f"workspaces/{workspace_id}/projects/{project_id}/exports/version_{version_id}.zip"
+    old_zip_filename = f"projects/{project_id}/exports/version_{version_id}.zip"
+    root_zip_filename = f"version_{version_id}.zip"
     work_dir = tempfile.mkdtemp(prefix=f"labelforge_train_{job_id}_")
     dataset_dir = os.path.join(work_dir, "dataset")
     runs_dir = os.path.join(work_dir, "runs")
 
     try:
-        zip_bytes = storage_client.download_file(zip_filename)
+        try:
+            zip_bytes = storage_client.download_file(new_zip_filename)
+        except Exception:
+            try:
+                zip_bytes = storage_client.download_file(old_zip_filename)
+            except Exception:
+                try:
+                    zip_bytes = storage_client.download_file(root_zip_filename)
+                except Exception as exc:
+                    raise exc
         os.makedirs(dataset_dir, exist_ok=True)
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zip_ref:
             zip_ref.extractall(dataset_dir)
@@ -300,7 +317,7 @@ def _train_yolo_model(
         precision = _metric_value(metrics, ["metrics/precision(B)", "metrics/precision"])
         recall = _metric_value(metrics, ["metrics/recall(B)", "metrics/recall"])
 
-        artifact_key = f"model-artifacts/{job_id}/best.pt"
+        artifact_key = f"workspaces/{workspace_id}/projects/{project_id}/model-artifacts/{job_id}/best.pt"
         with open(best_model_path, "rb") as model_file:
             storage_client.upload_file(
                 file_bytes=model_file.read(),

@@ -210,11 +210,14 @@ export default function VersionCard({
           <Button
             className="flex-1 h-14 rounded-2xl shadow-accent group"
             onClick={() => {
-              if (version.zip_url) {
-                window.open(version.zip_url, '_blank')
+              if (typeof window !== 'undefined') {
+                const downloadUrl = window.location.port === '3000'
+                  ? `${window.location.protocol}//${window.location.hostname}:8888/api/versions/${version.id}/download`
+                  : `/api/versions/${version.id}/download`
+                window.location.href = downloadUrl
               }
             }}
-            disabled={!version.zip_url || version.status === 'processing'}
+            disabled={version.status !== 'ready'}
           >
             <Download className="w-4 h-4 mr-2" />
             <span className="text-sm font-bold">Download ZIP</span>

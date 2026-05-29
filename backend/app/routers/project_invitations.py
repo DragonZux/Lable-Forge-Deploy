@@ -42,7 +42,8 @@ async def create_project_invitation(
         raise HTTPException(status_code=403, detail="Insufficient permissions to invite to this project")
     
     # 3. Check if already a member of PROJECT
-    invitee_user = await db.users.find_one({"email": invitation_data.email})
+    normalized_email = invitation_data.email.lower()
+    invitee_user = await db.users.find_one({"email": normalized_email})
     if invitee_user:
         invitee_user_id = str(invitee_user["_id"])
         if any(m["user_id"] == invitee_user_id for m in project.get("members", [])):
@@ -53,7 +54,7 @@ async def create_project_invitation(
     # 4. Check for existing pending invitation
     existing_invite = await db.project_invitations.find_one({
         "project_id": project_id,
-        "invitee_email": invitation_data.email,
+        "invitee_email": normalized_email,
         "status": "pending"
     })
     if existing_invite:
@@ -68,7 +69,7 @@ async def create_project_invitation(
         "invited_by_user_id": str(current_user.id),
         "invited_by_name": current_user.full_name,
         "invited_by_avatar": getattr(current_user, "avatar_url", None),
-        "invitee_email": invitation_data.email,
+        "invitee_email": normalized_email,
         "invitee_user_id": invitee_user_id,
         "role": invitation_data.role,
         "status": "pending",

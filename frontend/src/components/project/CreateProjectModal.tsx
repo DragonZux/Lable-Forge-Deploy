@@ -100,8 +100,8 @@ export default function CreateProjectModal({
         .filter(Boolean),
     ].filter((name, index, array) => array.findIndex((item) => item.toLowerCase() === name.toLowerCase()) === index);
 
-    if (selectedType === "classification" && classLabels.length === 0) {
-      setError("Please enter at least one product type");
+    if (selectedType === "classification" && initialClassLabels.length === 0) {
+      setError("Please add at least one product type to the list");
       return;
     }
 
@@ -281,7 +281,7 @@ export default function CreateProjectModal({
             <Button
               onClick={handleCreate}
               isLoading={isLoading}
-              disabled={!projectName.trim() || (selectedType === "classification" && !classInput.trim() && initialClassLabels.length === 0)}
+              disabled={!projectName.trim() || (selectedType === "classification" && initialClassLabels.length === 0)}
               className="px-8"
             >
               Create Project

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react'
 import { Image, ImageReviewPayload, ImageSplit, ImageStatus } from '@/types'
-import api, { apiGet, apiPatch, apiDelete, apiPost } from '@/lib/api'
+import { apiGet, apiPatch, apiDelete, apiPost } from '@/lib/api'
 import { emitAppToast } from '@/lib/toast-events'
 
 interface ImagesResponse {
@@ -78,14 +78,25 @@ export function useUploadImages(projectId: string) {
         const formData = new FormData()
         files.forEach((f) => formData.append('files', f))
 
-        const response = await api.post(`/images/upload?project_id=${projectId}`, formData)
-        const data = response.data
+        const response = await fetch(
+          `/api/images/upload?project_id=${projectId}`,
+          {
+            method: 'POST',
+            credentials: 'include',
+            body: formData,
+          }
+        )
+
+        if (!response.ok) {
+          const error = await response.json()
+          const msg = error.detail || error.message || 'Upload failed'
+          try { emitAppToast({ message: msg, type: 'error' }) } catch {}
+          throw new Error(msg)
+        }
+
+        const data = await response.json()
         setProgress(100)
         return data
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed'
-        try { emitAppToast({ message: msg, type: 'error' }) } catch {}
-        throw err
       } finally {
         setIsLoading(false)
       }

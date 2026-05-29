@@ -94,6 +94,58 @@ export function useDeployModel(projectId: string) {
   return { deployModel, isLoading, error }
 }
 
+export function useImportModel(projectId: string) {
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const importModel = useCallback(
+    async (file: File) => {
+      if (!projectId || !file) {
+        throw new Error('Project ID and model file are required')
+      }
+      setIsLoading(true)
+      setError(null)
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        const response = await fetch(`/api/deploy/import?project_id=${projectId}`, {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        })
+
+        if (!response.ok) {
+          let errorMessage = `API error: ${response.status}`
+          try {
+            const errorData = await response.json()
+            if (typeof errorData?.detail === 'string') {
+              errorMessage = errorData.detail
+            } else if (typeof errorData?.message === 'string') {
+              errorMessage = errorData.message
+            }
+          } catch {}
+          throw new Error(errorMessage)
+        }
+
+        const data: DeployedModel = await response.json()
+        try { emitAppToast({ message: 'Model imported successfully!', type: 'success' }) } catch {}
+        return data
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to import model'
+        setError(msg)
+        try { emitAppToast({ message: msg, type: 'error' }) } catch {}
+        throw err
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [projectId]
+  )
+
+  return { importModel, isLoading, error }
+}
+
 export function useTestInference(modelId: string) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)

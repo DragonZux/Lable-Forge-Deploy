@@ -12,7 +12,7 @@ from ..core.database import get_database
 from ..core.redis import get_redis
 from ..core.storage import storage_client
 from ..utils.auth import get_current_user, hash_password, verify_password, invalidate_all_user_sessions
-from ..models.user import UserInDB, UserResponse
+from ..models.user import UserInDB, UserResponse, KaggleCredentialsUpdate
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
@@ -291,3 +291,61 @@ async def delete_account(
     await redis.delete(cache_key)
 
     return AccountDeleteResponse()
+
+
+class KaggleCredentialsResponse(BaseModel):
+    """Response schema for getting Kaggle configuration status."""
+    kaggle_username: Optional[str] = None
+    is_configured: bool
+    kaggle_key: Optional[str] = None
+
+
+@router.get("/kaggle", response_model=KaggleCredentialsResponse)
+async def get_kaggle_credentials(
+    current_user: UserInDB = Depends(get_current_user)
+) -> KaggleCredentialsResponse:
+    """
+    Get Kaggle credentials config status (username and whether key is set).
+    """
+    return KaggleCredentialsResponse(
+        kaggle_username=getattr(current_user, "kaggle_username", None),
+        is_configured=bool(getattr(current_user, "kaggle_key", None)),
+        kaggle_key=getattr(current_user, "kaggle_key", None)
+    )
+
+
+@router.put("/kaggle", status_code=status.HTTP_200_OK)
+async def update_kaggle_credentials(
+    credentials: KaggleCredentialsUpdate,
+    current_user: UserInDB = Depends(get_current_user),
+    db = Depends(get_database),
+    redis = Depends(get_redis)
+):
+    """
+    Update Kaggle API credentials (username and API key/token).
+    """
+    # Save credentials securely to the user in DB
+    result = await db.users.find_one_and_update(
+        {"_id": ObjectId(current_user.id)},
+        {
+            "$set": {
+                "kaggle_username": credentials.kaggle_username,
+                "kaggle_key": credentials.kaggle_key,
+                "updated_at": datetime.utcnow()
+            }
+        },
+        return_document=True
+    )
+
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    # Invalidate user cache to ensure updated credentials load on next request
+    cache_key = f"user:{current_user.id}"
+    await redis.delete(cache_key)
+
+    return {"message": "Kaggle credentials updated successfully"}
+

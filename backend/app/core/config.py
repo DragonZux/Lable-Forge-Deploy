@@ -1,13 +1,15 @@
-from typing import Any, List
+import os
+import logging
+from typing import Annotated, Any, List
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 class Settings(BaseSettings):
-    PROJECT_NAME: str = "VisionFlow"
+    PROJECT_NAME: str = "Label Forge"
     VERSION: str = "1.0.0"
     
     # MongoDB
-    MONGO_URI: str = "mongodb://localhost:27017"
+    MONGO_URI: str = "mongodb://localhost:27018"
     MONGO_DB_NAME: str = "labelforge"
     
     # Redis
@@ -29,7 +31,7 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     
     # CORS
-    CORS_ORIGINS: List[str] = [
+    CORS_ORIGINS: Annotated[List[str], NoDecode] = [
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
@@ -38,6 +40,8 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
+        "https://label-forge-one.vercel.app",
+        "https://label-forge-dragonzuxs-projects.vercel.app",
     ]
 
     # Email (SMTP)
@@ -64,3 +68,29 @@ class Settings(BaseSettings):
         return value
 
 settings = Settings()
+
+def get_active_backend_url() -> str:
+    """Dynamically reads the .env file to fetch the latest BACKEND_PUBLIC_URL,
+    preventing stale/cached tunnel URLs inside running containers.
+    """
+    env_paths = ["/app/.env", ".env", "../.env"]
+    for path in env_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("BACKEND_PUBLIC_URL="):
+                            val = line.split("=", 1)[1].strip()
+                            if val.startswith(('"', "'")) and val.endswith(('"', "'")):
+                                val = val[1:-1].strip()
+                            if val:
+                                return val
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Error reading .env at {path}: {e}")
+                
+    # Fallback to Pydantic Settings, environment variables or default
+    val = settings.BACKEND_PUBLIC_URL.strip() or os.environ.get("BACKEND_PUBLIC_URL", "").strip() or os.environ.get("BACKEND_URL", "").strip()
+    if val:
+        return val
+    return "http://localhost:8000"

@@ -194,7 +194,22 @@ async def list_projects(
         if not projects:
             raise HTTPException(status_code=403, detail="Access denied to workspace")
 
-    return [_project_to_response(p).model_dump() for p in projects]
+    repaired_projects = []
+    for p in projects:
+        if p.get("image_count", 0) == 0 and p.get("annotation_count", 0) > 0:
+            await db.annotations.delete_many({"project_id": str(p["_id"])})
+            await db.projects.update_one(
+                {"_id": p["_id"]},
+                {"$set": {"annotation_count": 0}}
+            )
+            await db.class_labels.update_many(
+                {"project_id": str(p["_id"])},
+                {"$set": {"annotation_count": 0}}
+            )
+            p["annotation_count"] = 0
+        repaired_projects.append(p)
+
+    return [_project_to_response(p).model_dump() for p in repaired_projects]
 
 
 @router.post("", status_code=201)
@@ -265,6 +280,18 @@ async def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
         
     await check_project_access(user, project, db, "viewer")
+    
+    if project.get("image_count", 0) == 0 and project.get("annotation_count", 0) > 0:
+        await db.annotations.delete_many({"project_id": project_id})
+        await db.projects.update_one(
+            {"_id": project_oid},
+            {"$set": {"annotation_count": 0}}
+        )
+        await db.class_labels.update_many(
+            {"project_id": project_id},
+            {"$set": {"annotation_count": 0}}
+        )
+        project["annotation_count"] = 0
     
     class_labels = await db.class_labels.find({"project_id": project_id}).to_list(None)
     recent_images = await db.images.find({"project_id": project_id}).sort("created_at", -1).limit(5).to_list(None)

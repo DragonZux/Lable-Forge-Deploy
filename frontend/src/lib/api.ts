@@ -3,14 +3,14 @@ import axios, {
   AxiosError,
   InternalAxiosRequestConfig,
 } from "axios";
-import { clearAuth, getAccessToken } from "./auth";
+import { clearAuth } from "./auth";
 import { emitAppToast } from "./toast-events";
 
 // Get base URL - use absolute URL on server, relative on client
 const isServer = typeof window === "undefined";
-export const API_BASE_URL = isServer
+const API_BASE_URL = isServer
   ? (process.env.INTERNAL_API_URL || "http://127.0.0.1:8000/api")
-  : (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api");
+  : (process.env.NEXT_PUBLIC_API_URL || "/api");
 
 const recentErrorToasts = new Map<string, number>();
 
@@ -90,13 +90,6 @@ const api: AxiosInstance = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = getAccessToken();
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    if (typeof FormData !== "undefined" && config.data instanceof FormData) {
-      delete config.headers["Content-Type"];
-    }
     return config;
   },
   (error) => {

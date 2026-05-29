@@ -85,3 +85,55 @@ export function useExportVersion(versionId: string) {
 
   return { exportVersion, isLoading, error }
 }
+
+export function useImportDatasetVersion(projectId: string) {
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const importVersion = useCallback(
+    async (file: File) => {
+      if (!projectId) return
+      setIsLoading(true)
+      setError(null)
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+
+        let uploadUrl = `/api/versions/import?project_id=${projectId}`
+        if (typeof window !== 'undefined' && window.location.port === '3000') {
+          // Bypasses Next.js dev server rewrite proxy to avoid stream/buffer limits for large files
+          uploadUrl = `${window.location.protocol}//${window.location.hostname}:8888/api/versions/import?project_id=${projectId}`
+        }
+
+        const response = await fetch(
+          uploadUrl,
+          {
+            method: 'POST',
+            credentials: 'include',
+            body: formData,
+          }
+        )
+
+        if (!response.ok) {
+          const errData = await response.json().catch(() => ({}))
+          const msg = errData.detail || errData.message || 'Failed to import zip dataset'
+          setError(msg)
+          throw new Error(msg)
+        }
+
+        const result = await response.json()
+        return result
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to import zip dataset'
+        setError(msg)
+        throw err
+      } finally {
+        setIsLoading(false)
+      }
+    },
+    [projectId]
+  )
+
+  return { importVersion, isLoading, error }
+}
+

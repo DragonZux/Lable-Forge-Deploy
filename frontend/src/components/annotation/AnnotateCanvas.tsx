@@ -128,12 +128,15 @@ export default function AnnotateCanvas({
     onSelectAnnotation(null)
   }, [image?.id, onSelectAnnotation])
 
+  const prevActiveClassIdRef = useRef<string | null>(null)
+
   // Automatically switch to drawing tool when a class is activated
   useEffect(() => {
-    if (activeClassId && tool === 'select') {
+    if (activeClassId && activeClassId !== prevActiveClassIdRef.current) {
       setTool('bbox')
     }
-  }, [activeClassId, tool])
+    prevActiveClassIdRef.current = activeClassId
+  }, [activeClassId])
 
   // Keyboard shortcuts
   useEffect(() => {

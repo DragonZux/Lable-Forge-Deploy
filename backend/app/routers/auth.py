@@ -1,16 +1,16 @@
 import secrets
 from bson import ObjectId
 from typing import Optional, Tuple
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status, Depends, Response, Request, Form
+from fastapi import APIRouter, HTTPException, status, Depends, Response, Request, Form
 from fastapi.responses import RedirectResponse
 from starlette.concurrency import run_in_threadpool
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
-from app.models.user import UserCreate, UserResponse, Token, UserInDB, UserLogin, GoogleLogin, UserUpdate, PasswordUpdate
+from app.models.user import UserCreate, UserResponse, Token, UserInDB, UserLogin, GoogleLogin, UserUpdate, PasswordUpdate, ForgotPasswordRequest, ResetPasswordRequest
 from app.models.workspace import MemberRef
 from app.core.database import get_database
 from app.core.config import settings
-from app.core.redis import cache_set, cache_delete
+from app.core.redis import cache_set, cache_delete, cache_get
 from app.utils.auth import (
     hash_password,
     verify_password,
@@ -168,7 +168,8 @@ async def _find_or_create_google_user(google_payload: dict) -> Tuple[dict, Optio
 @router.post("/register", response_model=dict, status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate, response: Response):
     db = get_database()
-    existing_user = await db.users.find_one({"email": user_data.email})
+    normalized_email = user_data.email.lower()
+    existing_user = await db.users.find_one({"email": normalized_email})
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -176,7 +177,7 @@ async def register(user_data: UserCreate, response: Response):
         )
     hashed_password = hash_password(user_data.password)
     user_doc = {
-        "email": user_data.email,
+        "email": normalized_email,
         "full_name": user_data.full_name,
         "hashed_password": hashed_password,
         "created_at": datetime.utcnow(),
@@ -201,7 +202,8 @@ async def register(user_data: UserCreate, response: Response):
 @router.post("/login", response_model=dict)
 async def login(login_data: UserLogin, response: Response):
     db = get_database()
-    user_doc = await db.users.find_one({"email": login_data.email})
+    normalized_email = login_data.email.lower()
+    user_doc = await db.users.find_one({"email": normalized_email})
     if (
         not user_doc
         or user_doc.get("is_active") is False
@@ -288,77 +290,13 @@ async def update_password(
 
 @router.delete("/me")
 async def delete_account(
-    request: Request,
-    background_tasks: BackgroundTasks,
     current_user: UserInDB = Depends(get_current_user),
     db = Depends(get_database)
 ):
     """
-    Delete current user's account and clean up user-scoped references.
+    Delete current user's account.
     """
-    user_id = str(current_user.id)
-    user_email = str(current_user.email)
-
-    owned_workspaces = await db.workspaces.find({"owner_id": user_id}).to_list(None)
-    owned_workspace_ids = [str(workspace["_id"]) for workspace in owned_workspaces]
-    owned_projects = await db.projects.find(
-        {"workspace_id": {"$in": owned_workspace_ids}}
-    ).to_list(None)
-    owned_project_ids = [str(project["_id"]) for project in owned_projects]
-
-    if owned_project_ids:
-        images = await db.images.find({"project_id": {"$in": owned_project_ids}}).to_list(None)
-        for image in images:
-            filename = image.get("filename")
-            if filename:
-                background_tasks.add_task(storage_client.delete_file, filename)
-
-        await db.projects.delete_many({"_id": {"$in": [ObjectId(pid) for pid in owned_project_ids]}})
-        await db.images.delete_many({"project_id": {"$in": owned_project_ids}})
-        await db.annotations.delete_many({"project_id": {"$in": owned_project_ids}})
-        await db.annotation_audit_logs.delete_many({"project_id": {"$in": owned_project_ids}})
-        await db.class_labels.delete_many({"project_id": {"$in": owned_project_ids}})
-        await db.dataset_versions.delete_many({"project_id": {"$in": owned_project_ids}})
-        await db.training_jobs.delete_many({"project_id": {"$in": owned_project_ids}})
-        await db.deployed_models.delete_many({"project_id": {"$in": owned_project_ids}})
-        await db.project_invitations.delete_many({"project_id": {"$in": owned_project_ids}})
-
-    if owned_workspace_ids:
-        await db.workspaces.delete_many({"_id": {"$in": [ObjectId(wid) for wid in owned_workspace_ids]}})
-        await db.workspace_invitations.delete_many({"workspace_id": {"$in": owned_workspace_ids}})
-
-    await db.workspaces.update_many(
-        {"members.user_id": user_id},
-        {"$pull": {"members": {"user_id": user_id}}},
-    )
-    await db.projects.update_many(
-        {"members.user_id": user_id},
-        {"$pull": {"members": {"user_id": user_id}}},
-    )
-    await db.images.update_many(
-        {"assigned_to_user_id": user_id},
-        {
-            "$set": {
-                "assigned_to_user_id": None,
-                "assigned_by_user_id": None,
-                "assigned_at": None,
-                "due_at": None,
-                "completed_at": None,
-                "assignment_status": "unassigned",
-            }
-        },
-    )
-    await db.notifications.delete_many({"user_id": user_id})
-    await db.workspace_invitations.delete_many({"invitee_email": user_email})
-    await db.project_invitations.delete_many({"invitee_email": user_email})
-    await db.users.delete_one({"_id": ObjectId(user_id)})
-    await cache_delete(f"user:{user_id}")
-
-    token = request.cookies.get("access_token")
-    if token:
-        payload = decode_token(token)
-        if payload:
-            await invalidate_user_session(user_id, payload.get("sid"))
+    await db.users.delete_one({"_id": ObjectId(current_user.id)})
     return {"message": "Account deleted successfully"}
 
 
@@ -387,11 +325,7 @@ async def logout(request: Request, response: Response):
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(
-    request: Request,
-    response: Response,
-    current_user: UserInDB = Depends(get_current_user),
-):
+async def refresh_token(request: Request, current_user: UserInDB = Depends(get_current_user)):
     token = request.cookies.get("access_token")
     session_id = None
     if token:
@@ -399,5 +333,60 @@ async def refresh_token(
         if payload:
             session_id = payload.get("sid")
     access_token = create_access_token(data={"sub": current_user.id, "sid": session_id})
-    _set_auth_cookie(response, access_token)
     return Token(access_token=access_token, token_type="bearer")
+
+
+@router.post("/forgot-password")
+async def forgot_password(payload: ForgotPasswordRequest):
+    db = get_database()
+    normalized_email = payload.email.lower()
+    user = await db.users.find_one({"email": normalized_email})
+    
+    if user:
+        reset_token = secrets.token_urlsafe(32)
+        # Store reset token in Redis for 1 hour (3600 seconds)
+        await cache_set(f"password-reset:{reset_token}", {"email": normalized_email}, ttl=3600)
+        
+        # Send email
+        from app.services.email_service import EmailService
+        await EmailService.send_password_reset(
+            recipient_email=normalized_email,
+            recipient_name=user.get("full_name") or normalized_email.split("@")[0],
+            reset_token=reset_token
+        )
+        
+    return {"message": "If the email is registered in our system, a password reset link has been sent."}
+
+
+@router.post("/reset-password")
+async def reset_password(payload: ResetPasswordRequest):
+    db = get_database()
+    token_key = f"password-reset:{payload.token}"
+    data = await cache_get(token_key)
+    
+    if not data or "email" not in data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token"
+        )
+        
+    email = data["email"]
+    
+    # Hash and update new password
+    hashed_password = hash_password(payload.new_password)
+    result = await db.users.update_one(
+        {"email": email},
+        {"$set": {"hashed_password": hashed_password, "updated_at": datetime.utcnow()}}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+        
+    # Delete token from Redis
+    await cache_delete(token_key)
+    
+    return {"message": "Password reset successfully"}
+

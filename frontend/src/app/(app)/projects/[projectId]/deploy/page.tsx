@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { useTrainingJobs } from '@/hooks/useTrainingJobs'
-import { useDeployedModels, useDeployModel } from '@/hooks/useDeploy'
+import { useDeployedModels, useDeployModel, useImportModel } from '@/hooks/useDeploy'
 import DeployedModelCard from '@/components/deploy/DeployedModelCard'
 import { SectionLabel } from '@/components/ui/SectionLabel'
 import { Button } from '@/components/ui/Button'
@@ -14,7 +14,9 @@ import {
   Terminal, 
   RefreshCw,
   Box,
-  AlertCircle
+  AlertCircle,
+  UploadCloud,
+  FileUp
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { TrainingJobResponse } from '@/types'
@@ -35,9 +37,14 @@ export default function DeployPage() {
   const { jobs, fetchJobs } = useTrainingJobs(projectId)
   const { models, fetchModels } = useDeployedModels(projectId)
   const { deployModel, isLoading: isDeploying } = useDeployModel(projectId)
+  const { importModel, isLoading: isImporting } = useImportModel(projectId)
 
   const [selectedJobId, setSelectedJobId] = useState<string>('')
   const [deployError, setDeployError] = useState<string | null>(null)
+
+  // Custom model file upload state
+  const [selectedModelFile, setSelectedModelFile] = useState<File | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
 
   useEffect(() => {
     if (canReview) {
@@ -75,6 +82,20 @@ export default function DeployPage() {
     }
   }
 
+  const handleImport = async () => {
+    if (!selectedModelFile) return
+
+    setImportError(null)
+    try {
+      await importModel(selectedModelFile)
+      await fetchModels()
+      setSelectedModelFile(null)
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Failed to import model'
+      setImportError(msg)
+    }
+  }
+
   if (project && isGuest) {
     return (
       <div className="page-shell">
@@ -104,7 +125,7 @@ export default function DeployPage() {
       </div>
 
       {/* Deploy Control Panel */}
-      {canManageProject && deployableJobs.length > 0 && (
+      {canManageProject && (
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -121,61 +142,144 @@ export default function DeployPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 items-end">
-              <div className="space-y-3">
-                <label className="text-xs font-bold text-muted-foreground uppercase tracking-[0.15em] ml-1">
-                  Select Training Artifact
-                </label>
-                <div className="relative">
-                  <select
-                    value={selectedJobId}
-                    onChange={(e) => {
-                      setSelectedJobId(e.target.value)
-                      setDeployError(null)
-                    }}
-                    className="select-control w-full h-14 pr-12 appearance-none cursor-pointer"
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+              
+              {/* Left Column: Deploy Trained Model */}
+              <div className="flex flex-col justify-between p-6 bg-background/50 border border-border/80 rounded-2xl">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Option 1: Deploy Trained Artifact</h3>
+                  </div>
+                  
+                  {deployableJobs.length === 0 ? (
+                    <div className="py-6 px-4 bg-muted/20 border border-dashed border-border rounded-xl text-center">
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        No undeployed training artifacts found in this project. Complete a training cycle to enable deployment here.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] ml-1">
+                        Select Training Artifact
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={selectedJobId}
+                          onChange={(e) => {
+                            setSelectedJobId(e.target.value)
+                            setDeployError(null)
+                          }}
+                          className="select-control w-full h-12 pr-12 appearance-none cursor-pointer text-sm"
+                        >
+                          <option value="">Select a trained model...</option>
+                          {deployableJobs.map((job) => (
+                            <option key={job.id} value={job.id}>
+                              Artifact {job.id.slice(-6)} — mAP {(job.map_score * 100).toFixed(1)}% — {new Date(job.finished_at!).toLocaleDateString()}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6">
+                  {deployError && (
+                    <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-500" />
+                      <p className="text-xs text-red-700">{deployError}</p>
+                    </div>
+                  )}
+                  <Button
+                    size="lg"
+                    onClick={handleDeploy}
+                    disabled={!selectedJobId || isDeploying}
+                    className="w-full h-12 rounded-xl shadow-accent group"
                   >
-                    <option value="">Select a trained model...</option>
-                    {deployableJobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        Artifact {job.id.slice(-6)} — mAP {(job.map_score * 100).toFixed(1)}% — {new Date(job.finished_at!).toLocaleDateString()}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none" />
+                    {isDeploying ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Deploying...
+                      </>
+                    ) : (
+                      <>
+                        <Globe className="w-4 h-4 mr-2 group-hover:rotate-12 transition-transform" />
+                        Activate Endpoint
+                      </>
+                    )}
+                  </Button>
                 </div>
               </div>
 
-              <Button
-                size="lg"
-                onClick={handleDeploy}
-                disabled={!selectedJobId || isDeploying}
-                className="h-14 px-10 rounded-2xl shadow-accent group"
-              >
-                {isDeploying ? (
-                  <>
-                    <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-                    Deploying...
-                  </>
-                ) : (
-                  <>
-                    <Globe className="w-5 h-5 mr-2 group-hover:rotate-12 transition-transform" />
-                    Activate Endpoint
-                  </>
-                )}
-              </Button>
+              {/* Right Column: Import Custom Model File */}
+              <div className="flex flex-col justify-between p-6 bg-background/50 border border-border/80 rounded-2xl">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Option 2: Import Custom Weights</h3>
+                  </div>
+
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.15em] ml-1">
+                      Upload YOLO Weights (.pt)
+                    </label>
+                    <div className="relative border border-dashed border-border bg-muted/10 rounded-xl p-4 text-center transition-all hover:bg-white/40 hover:border-accent/40 cursor-pointer group/upload">
+                      <input
+                        type="file"
+                        accept=".pt"
+                        onChange={(e) => {
+                          setSelectedModelFile(e.target.files?.[0] || null)
+                          setImportError(null)
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer"
+                      />
+                      <div className="flex flex-col items-center py-2">
+                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-muted-foreground group-hover/upload:text-accent group-hover/upload:scale-110 transition-all mb-2 shadow-sm border border-border/40">
+                          <FileUp className="w-5 h-5" />
+                        </div>
+                        <p className="text-xs font-bold text-foreground truncate max-w-full px-2">
+                          {selectedModelFile ? selectedModelFile.name : 'Select custom .pt file'}
+                        </p>
+                        <p className="text-[9px] text-muted-foreground mt-0.5 uppercase tracking-widest font-bold">
+                          Click or drag file here
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  {importError && (
+                    <div className="mb-4 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3">
+                      <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-500" />
+                      <p className="text-xs text-red-700">{importError}</p>
+                    </div>
+                  )}
+                  <Button
+                    size="lg"
+                    onClick={handleImport}
+                    disabled={!selectedModelFile || isImporting}
+                    className="w-full h-12 rounded-xl shadow-accent group bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white"
+                  >
+                    {isImporting ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                        Uploading Weights...
+                      </>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-4 h-4 mr-2 group-hover:scale-110 transition-transform" />
+                        Import & Deploy
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
             </div>
 
-            {deployError && (
-              <div className="mt-6 flex items-start gap-3 rounded-xl border border-red-100 bg-red-50 p-4">
-                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-500" />
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-red-700">Deployment failed</p>
-                  <p className="mt-1 text-sm text-red-700">{deployError}</p>
-                </div>
-              </div>
-            )}
-            
             <div className="mt-8 flex items-center gap-4 rounded-xl border border-accent/15 bg-accent/5 p-4">
               <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center text-accent shadow-sm">
                 <Terminal className="w-4 h-4" />
@@ -218,7 +322,11 @@ export default function DeployPage() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: idx * 0.1 }}
               >
-                <DeployedModelCard model={model} canTestInference={canReview} />
+                <DeployedModelCard 
+                  model={model} 
+                  canTestInference={canReview} 
+                  classLabels={project?.class_labels || []} 
+                />
               </motion.div>
             ))}
           </div>

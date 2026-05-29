@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
-import { Mail, Lock, User, ArrowLeft } from "lucide-react";
+import { Mail, Lock, User, ArrowLeft, Check } from "lucide-react";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
 import { Suspense } from "react";
@@ -16,6 +16,10 @@ function LoginContent() {
   const nextUrl = searchParams.get("next") || "/dashboard";
   const [isLogin, setIsLogin] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isForgot, setIsForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
 
   useEffect(() => {
     const mode = searchParams.get("mode");
@@ -66,6 +70,28 @@ function LoginContent() {
     }
   };
 
+  const handleForgotSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setFormError(null);
+    setIsForgotLoading(true);
+    try {
+      const response = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || "Failed to send recovery link");
+      }
+      setForgotSent(true);
+    } catch (err: any) {
+      setFormError(err.message || "Failed to send recovery link");
+    } finally {
+      setIsForgotLoading(false);
+    }
+  };
+
   const handleRegisterSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setFormError(null);
@@ -106,69 +132,154 @@ function LoginContent() {
         
         {/* Sign In Form (Left side) */}
         <div className={`h-full w-full flex-col items-center justify-center p-6 transition-all duration-700 ease-in-out sm:p-10 lg:flex lg:w-1/2 lg:p-12 ${isLogin ? "flex opacity-100 translate-x-0" : "hidden opacity-0 translate-x-full pointer-events-none lg:flex"}`}>
-          <form onSubmit={handleLoginSubmit} className="w-full max-w-sm flex flex-col items-center">
-            <h1 className="mb-3 text-center font-display text-4xl leading-tight text-foreground">Sign in to <span className="gradient-text">Label Forge</span></h1>
-            
-            <div className="mb-6 w-full">
-              <GoogleSignInButton onCredential={handleGoogleCredential} disabled={isLoading} />
-            </div>
-            
-            <p className="text-muted-foreground text-sm mb-6">or use your email account:</p>
-            
-            <div className="w-full space-y-4 mb-4">
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  <Mail className="w-5 h-5" />
+          {isForgot ? (
+            <form onSubmit={handleForgotSubmit} className="w-full max-w-sm flex flex-col items-center">
+              <h1 className="mb-3 text-center font-display text-4xl leading-tight text-foreground">Reset <span className="gradient-text">Password</span></h1>
+              
+              {forgotSent ? (
+                <div className="text-center w-full space-y-5 my-6">
+                  <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto border border-emerald-500/20">
+                    <Check className="w-8 h-8" />
+                  </div>
+                  <p className="text-foreground font-bold text-lg">Recovery link sent!</p>
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    We've sent a password recovery link to <span className="font-semibold text-foreground break-all">{forgotEmail}</span>. Please check your inbox.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsForgot(false);
+                      setForgotSent(false);
+                      setForgotEmail("");
+                    }}
+                    className="mt-6 inline-flex h-12 items-center justify-center rounded-xl border border-border bg-background px-6 text-sm font-bold text-foreground transition-all hover:text-accent"
+                  >
+                    Back to Sign In
+                  </button>
                 </div>
-                <input
-                  name="email"
-                  type="email"
-                  placeholder="Email"
-                  value={loginData.email}
-                  onChange={handleLoginChange}
-                  className="h-14 w-full rounded-xl border border-border bg-background pl-12 pr-4 text-foreground outline-none transition-all placeholder:text-muted-foreground/50 hover:border-accent/30 focus:border-accent focus:ring-4 focus:ring-accent/10"
-                  required
-                />
+              ) : (
+                <>
+                  <p className="text-muted-foreground text-sm text-center mb-8">
+                    Enter your email address below and we'll send you a recovery link to reset your password.
+                  </p>
+                  
+                  <div className="w-full mb-6">
+                    <div className="relative">
+                      <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">
+                        <Mail className="w-5 h-5" />
+                      </div>
+                      <input
+                        type="email"
+                        placeholder="Email Address"
+                        value={forgotEmail}
+                        onChange={(e) => {
+                          setForgotEmail(e.target.value);
+                          setFormError(null);
+                        }}
+                        className="h-14 w-full rounded-xl border border-border bg-background pl-12 pr-4 text-foreground outline-none transition-all placeholder:text-muted-foreground/50 hover:border-accent/30 focus:border-accent focus:ring-4 focus:ring-accent/10"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {formError && (
+                    <p className="text-red-500 text-sm mb-4 font-medium text-center">{formError}</p>
+                  )}
+
+                  <div className="flex flex-col w-full gap-4 items-center">
+                    <button
+                      type="submit"
+                      disabled={isForgotLoading}
+                      className="h-14 w-full rounded-xl bg-gradient-to-r from-accent to-accent-secondary font-bold uppercase tracking-wider text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-accent-lg active:scale-[0.98] disabled:opacity-50"
+                    >
+                      {isForgotLoading ? "Sending..." : "SEND RECOVERY LINK"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsForgot(false);
+                        setFormError(null);
+                      }}
+                      className="text-sm font-bold text-muted-foreground hover:text-accent transition-colors"
+                    >
+                      Back to Sign In
+                    </button>
+                  </div>
+                </>
+              )}
+            </form>
+          ) : (
+            <form onSubmit={handleLoginSubmit} className="w-full max-w-sm flex flex-col items-center">
+              <h1 className="mb-3 text-center font-display text-4xl leading-tight text-foreground">Sign in to <span className="gradient-text">Label Forge</span></h1>
+              
+              <div className="mb-6 w-full">
+                <GoogleSignInButton onCredential={handleGoogleCredential} disabled={isLoading} />
               </div>
-              <div className="relative">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  <Lock className="w-5 h-5" />
+              
+              <p className="text-muted-foreground text-sm mb-6">or use your email account:</p>
+              
+              <div className="w-full space-y-4 mb-4">
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    <Mail className="w-5 h-5" />
+                  </div>
+                  <input
+                    name="email"
+                    type="email"
+                    placeholder="Email"
+                    value={loginData.email}
+                    onChange={handleLoginChange}
+                    className="h-14 w-full rounded-xl border border-border bg-background pl-12 pr-4 text-foreground outline-none transition-all placeholder:text-muted-foreground/50 hover:border-accent/30 focus:border-accent focus:ring-4 focus:ring-accent/10"
+                    required
+                  />
                 </div>
-                <input
-                  name="password"
-                  type="password"
-                  placeholder="Password"
-                  value={loginData.password}
-                  onChange={handleLoginChange}
-                  className="h-14 w-full rounded-xl border border-border bg-background pl-12 pr-4 text-foreground outline-none transition-all placeholder:text-muted-foreground/50 hover:border-accent/30 focus:border-accent focus:ring-4 focus:ring-accent/10"
-                  required
-                />
+                <div className="relative">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    <Lock className="w-5 h-5" />
+                  </div>
+                  <input
+                    name="password"
+                    type="password"
+                    placeholder="Password"
+                    value={loginData.password}
+                    onChange={handleLoginChange}
+                    className="h-14 w-full rounded-xl border border-border bg-background pl-12 pr-4 text-foreground outline-none transition-all placeholder:text-muted-foreground/50 hover:border-accent/30 focus:border-accent focus:ring-4 focus:ring-accent/10"
+                    required
+                  />
+                </div>
               </div>
-            </div>
 
-            <button type="button" className="text-muted-foreground text-sm mb-8 hover:text-accent transition-colors border-b border-transparent hover:border-accent">
-              Forgot your password?
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsForgot(true);
+                  setFormError(null);
+                }}
+                className="text-muted-foreground text-sm mb-8 hover:text-accent transition-colors border-b border-transparent hover:border-accent"
+              >
+                Forgot your password?
+              </button>
 
-            {(formError || error) && isLogin && (
-              <p className="text-red-500 text-sm mb-4 font-medium">{formError || error}</p>
-            )}
+              {(formError || error) && isLogin && (
+                <p className="text-red-500 text-sm mb-4 font-medium">{formError || error}</p>
+              )}
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="h-14 w-48 rounded-xl bg-gradient-to-r from-accent to-accent-secondary font-bold uppercase tracking-wider text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-accent-lg active:scale-[0.98] disabled:opacity-50"
-            >
-              {isLoading ? "Signing in..." : "SIGN IN"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsLogin(false)}
-              className="mt-5 text-sm font-semibold text-muted-foreground underline-offset-4 hover:text-accent hover:underline lg:hidden"
-            >
-              Create a new account
-            </button>
-          </form>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="h-14 w-48 rounded-xl bg-gradient-to-r from-accent to-accent-secondary font-bold uppercase tracking-wider text-white shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-accent-lg active:scale-[0.98] disabled:opacity-50"
+              >
+                {isLoading ? "Signing in..." : "SIGN IN"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsLogin(false)}
+                className="mt-5 text-sm font-semibold text-muted-foreground underline-offset-4 hover:text-accent hover:underline lg:hidden"
+              >
+                Create a new account
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Sign Up Form (Right side) */}

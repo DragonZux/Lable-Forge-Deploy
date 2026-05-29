@@ -61,11 +61,15 @@ export default function CreateVersionModal({
 
   const handleSplitChange = (value: number, field: 'train' | 'valid') => {
     if (field === 'train') {
-      setTrainPercent(Math.min(100, Math.max(0, value)))
+      const nextTrainPercent = Math.min(100, Math.max(0, value))
+      setTrainPercent(nextTrainPercent)
+      setValidPercent((current) => Math.min(current, 100 - nextTrainPercent))
     } else {
       setValidPercent(Math.min(100 - trainPercent, Math.max(0, value)))
     }
   }
+
+  const validSliderFill = trainPercent === 100 ? 0 : (validPercent / (100 - trainPercent)) * 100
 
   const handleSubmit = async () => {
     try {
@@ -160,8 +164,8 @@ export default function CreateVersionModal({
                         className="w-full h-2 bg-white rounded-lg appearance-none cursor-pointer accent-accent-secondary"
                         style={{
                           background: `linear-gradient(to right, rgb(var(--accent-secondary)) 0%, rgb(var(--accent-secondary)) ${
-                            (validPercent / (100 - trainPercent)) * 100
-                          }%, #fff ${(validPercent / (100 - trainPercent)) * 100}%, #fff 100%)`,
+                            validSliderFill
+                          }%, #fff ${validSliderFill}%, #fff 100%)`,
                         }}
                       />
                     </div>

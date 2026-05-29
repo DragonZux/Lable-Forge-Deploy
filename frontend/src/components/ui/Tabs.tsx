@@ -21,6 +21,12 @@ export const Tabs = React.forwardRef<HTMLDivElement, TabsProps>(
       defaultTab || tabs[0]?.id || ""
     );
 
+    React.useEffect(() => {
+      if (defaultTab) {
+        setActiveTab(defaultTab);
+      }
+    }, [defaultTab]);
+
     const handleTabChange = (tabId: string) => {
       setActiveTab(tabId);
       onChange?.(tabId);
