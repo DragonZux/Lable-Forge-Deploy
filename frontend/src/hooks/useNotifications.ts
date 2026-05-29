@@ -68,8 +68,7 @@ export function useNotificationStream() {
 
     const connect = () => {
       if (isClosed) return;
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || '/api';
-      eventSource = new EventSource(`${baseUrl}/notifications/stream`, { withCredentials: true });
+      eventSource = new EventSource('/api/notifications/stream', { withCredentials: true });
 
       eventSource.addEventListener('notification', (event: any) => {
         const notification = JSON.parse(event.data);

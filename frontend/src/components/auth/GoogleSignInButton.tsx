@@ -12,8 +12,11 @@ let googleScriptPromise: Promise<void> | null = null;
 let initializedConfigKey: string | null = null;
 
 function getGoogleRedirectUri() {
-  const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/$/, "");
-  return `${apiBaseUrl}/auth/google/redirect`;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/api/auth/google/redirect`;
+  }
+
+  return "/api/auth/google/redirect";
 }
 
 function loadGoogleScript(): Promise<void> {

@@ -67,6 +67,13 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    @field_validator("FRONTEND_URL", mode="before")
+    @classmethod
+    def parse_frontend_url(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.split(",", 1)[0].strip().rstrip("/")
+        return value
+
 settings = Settings()
 
 def get_active_backend_url() -> str:
