@@ -12,7 +12,7 @@ declare global {
             locale?: string;
             auto_select?: boolean;
             itp_support?: boolean;
-            callback: (response: { credential?: string }) => void;
+            callback?: (response: { credential?: string }) => void;
           }) => void;
           renderButton: (
             parent: HTMLElement,

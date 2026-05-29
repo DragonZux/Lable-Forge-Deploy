@@ -11,6 +11,11 @@ type GoogleSignInButtonProps = {
 let googleScriptPromise: Promise<void> | null = null;
 let initializedConfigKey: string | null = null;
 
+function getGoogleRedirectUri() {
+  const apiBaseUrl = (process.env.NEXT_PUBLIC_API_URL || "/api").replace(/\/$/, "");
+  return `${apiBaseUrl}/auth/google/redirect`;
+}
+
 function loadGoogleScript(): Promise<void> {
   if (window.google?.accounts?.id) {
     return Promise.resolve();
@@ -43,7 +48,7 @@ function loadGoogleScript(): Promise<void> {
   return googleScriptPromise;
 }
 
-export function GoogleSignInButton({ onCredential, disabled = false }: GoogleSignInButtonProps) {
+export function GoogleSignInButton({ disabled = false }: GoogleSignInButtonProps) {
   const buttonRef = useRef<HTMLDivElement>(null);
   const hasRenderedButton = useRef(false);
   const [scriptReady, setScriptReady] = useState(false);
@@ -92,16 +97,13 @@ export function GoogleSignInButton({ onCredential, disabled = false }: GoogleSig
       return;
     }
 
-    const configKey = `${clientId}`;
+    const loginUri = getGoogleRedirectUri();
+    const configKey = `${clientId}:${loginUri}`;
     if (initializedConfigKey !== configKey) {
       window.google.accounts.id.initialize({
         client_id: clientId,
-        ux_mode: "popup",
-        callback: (response) => {
-          if (response.credential) {
-            onCredential(response.credential);
-          }
-        },
+        ux_mode: "redirect",
+        login_uri: loginUri,
         auto_select: false,
         itp_support: true,
       });
@@ -123,7 +125,7 @@ export function GoogleSignInButton({ onCredential, disabled = false }: GoogleSig
       width: buttonWidth,
     });
     hasRenderedButton.current = true;
-  }, [clientId, containerWidth, disabled, onCredential, scriptReady]);
+  }, [clientId, containerWidth, disabled, scriptReady]);
 
   if (!clientId) {
     return (
